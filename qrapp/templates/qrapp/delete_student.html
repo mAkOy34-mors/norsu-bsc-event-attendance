@@ -1,118 +1,21 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Delete Student - Confirm Password</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #ff758c, #ff7eb3);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-
-        .confirm-box {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 6px 15px rgba(0,0,0,0.2);
-            text-align: center;
-            width: 400px;
-        }
-
-        h2 {
-            color: #dc3545;
-            margin-bottom: 15px;
-        }
-
-        p {
-            color: #555;
-            margin-bottom: 25px;
-        }
-
-        .password-input {
-            width: 100%;
-            padding: 12px;
-            margin: 15px 0;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            box-sizing: border-box;
-            font-size: 16px;
-        }
-
-        .error-message {
-            color: #dc3545;
-            margin: 10px 0;
-            display: none;
-        }
-
-        .btn {
-            display: inline-block;
-            padding: 12px 20px;
-            border-radius: 8px;
-            border: none;
-            font-size: 15px;
-            cursor: pointer;
-            transition: 0.3s ease;
-        }
-
-        .btn-delete {
-            background: #dc3545;
-            color: white;
-        }
-
-        .btn-delete:hover {
-            background: #c82333;
-        }
-
-        .btn-cancel {
-            background: #6c757d;
-            color: white;
-            margin-left: 10px;
-            text-decoration: none;
-        }
-
-        .btn-cancel:hover {
-            background: #5a6268;
-        }
-
-        /* Django messages styling */
-        .alert {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 5px;
-            text-align: center;
-        }
-
-        .alert-error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-    </style>
+    <link rel="stylesheet" href="{% static 'qrapp/css/delete_student.css' %}">
 </head>
 <body>
     <div class="confirm-box">
         <h2>Delete Student</h2>
         <p>Are you sure you want to delete <strong>{{ student.name }}</strong>?</p>
 
-        <!-- Display Django messages -->
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{{ message.tags }}">
-                    {{ message }}
-                </div>
-            {% endfor %}
-        {% endif %}
-
         <form method="POST" id="deleteForm">
             {% csrf_token %}
             <input type="password" class="password-input" id="adminPassword"
                    name="adminPassword" placeholder="Enter your account password" required>
-            <div class="error-message" id="passwordError">
+            <div class="error-message" id="passwordError"{% if messages %}{% for message in messages %}{% if message.tags == 'error' %} data-error-text="{{ message }}"{% endif %}{% endfor %}{% endif %}>
                 Incorrect password. Please try again.
             </div>
 
@@ -123,24 +26,7 @@
         </form>
     </div>
 
-    <script>
-        // Allow submitting form with Enter key
-        document.getElementById('adminPassword').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('deleteForm').submit();
-            }
-        });
-
-        // Check if there's an error message from Django and show it
-        {% if messages %}
-            {% for message in messages %}
-                {% if message.tags == 'error' %}
-                    document.getElementById('passwordError').textContent = '{{ message }}';
-                    document.getElementById('passwordError').style.display = 'block';
-                {% endif %}
-            {% endfor %}
-        {% endif %}
-    </script>
+    {% include 'qrapp/partials/notifications.html' %}
+    <script src="{% static 'qrapp/js/delete_student.js' %}" defer></script>
 </body>
 </html>

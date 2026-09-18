@@ -3,6 +3,8 @@
 
 {% block title %}Manage Programs - {{ college.code }} | QR Attendance System{% endblock %}
 
+{% block extra_css %}<link rel="stylesheet" href="{% static 'qrapp/css/manage_programs.css' %}">{% endblock %}
+
 {% block content %}
 <!-- Page Header -->
 <div class="page-header">
@@ -11,34 +13,24 @@
         <p>Manage programs for {{ college.name }}</p>
     </div>
     <div class="header-actions">
-        <a href="{% url 'manage_colleges' %}" class="btn btn-secondary">
-            <i class="fas fa-arrow-left"></i> Back to Colleges
-        </a>
-        <button class="btn btn-primary" onclick="openAddModal()">
+        <button class="btn btn-primary" data-action="call" data-fn="openAddModal">
             <i class="fas fa-plus"></i> Add Program
         </button>
     </div>
 </div>
 
 <!-- Messages -->
-{% if messages %}
-<div class="messages-container mb-3">
-    {% for message in messages %}
-    <div class="alert alert-{{ message.tags }}">
-        {{ message }}
-        <button type="button" class="alert-close" onclick="this.parentElement.remove()">×</button>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
 
 <!-- Programs Table -->
 <div class="card">
     <div class="card-header">
         <h3><i class="fas fa-book"></i> Program List</h3>
         <div class="d-flex gap-2">
-            <span class="badge badge-info" style="padding: 8px 16px; font-size: 14px;">
-                Total: {{ programs.count }}
+            <span class="badge badge-info badge-lg">
+                Programs: {{ programs.count }}
+            </span>
+            <span class="badge badge-success badge-lg">
+                Total Students in {{ college.code }}: {{ college_total }}
             </span>
         </div>
     </div>
@@ -55,8 +47,9 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for program in programs %}
-                    <tr>
+                    {% for entry in programs_with_majors %}
+                    {% with program=entry.program majors=entry.majors %}
+                    <tr class="program-row">
                         <td><strong>{{ program.code }}</strong></td>
                         <td>{{ program.name }}</td>
                         <td>
@@ -67,20 +60,90 @@
                             {% endif %}
                         </td>
                         <td data-program-code="{{ program.code }}">
-                            <span class="student-count">Loading...</span>
+                            <span class="student-count">{{ program.student_count }} student{{ program.student_count|pluralize }}</span>
+                            {% if majors %}
+                            <br><small class="text-muted">{{ majors|length }} major{{ majors|length|pluralize }}</small>
+                            {% endif %}
                         </td>
-                        <td>
-                            <button class="btn btn-warning btn-sm" 
-                                    onclick="openEditModal('{{ program.id }}', '{{ program.code }}', '{{ program.name }}', {{ program.is_active|yesno:'true,false' }})">
+                        <td class="cell-actions">
+                            <div class="table-actions">
+                            <button class="btn btn-warning btn-sm"
+                                    data-action="call" data-fn="openEditModal" data-args="{{ program.id }}|{{ program.code|escapejs|urlencode }}|{{ program.name|escapejs|urlencode }}|{{ program.is_active|yesno:'true,false' }}">
                                 <i class="fas fa-edit"></i> Edit
                             </button>
-                            <button class="btn btn-danger btn-sm delete-btn" 
+                            <button class="btn btn-danger btn-sm delete-btn"
                                     data-program-id="{{ program.id }}"
                                     data-program-code="{{ program.code }}">
                                 <i class="fas fa-trash"></i> Delete
                             </button>
+                            {% if majors %}
+                            <button class="btn btn-info btn-sm"
+                                    data-action="call" data-fn="openAddMajorModal" data-args="{{ program.id }}|{{ program.code|escapejs|urlencode }}">
+                                <i class="fas fa-plus"></i> Major
+                            </button>
+                            {% endif %}
+                            </div>
                         </td>
                     </tr>
+                    {% if majors %}
+                    <tr class="major-group-row">
+                        <td></td>
+                        <td colspan="4">
+                            <div class="majors-panel">
+                                <div class="majors-panel-title">
+                                    <i class="fas fa-layer-group"></i> Majors under {{ program.code }}
+                                </div>
+                                <table class="majors-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Code</th>
+                                            <th>Full Name</th>
+                                            <th>Status</th>
+                                            <th>Students</th>
+                                            <th class="cell-actions">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for major in majors %}
+                                        <tr data-major-code="{{ major.code }}">
+                                            <td><strong>{{ major.code }}</strong></td>
+                                            <td>{{ major.name }}</td>
+                                            <td>
+                                                {% if major.is_active %}
+                                                <span class="badge badge-success">Active</span>
+                                                {% else %}
+                                                <span class="badge badge-danger">Inactive</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <span class="student-count">{{ major.student_count }} student{{ major.student_count|pluralize }}</span>
+                                            </td>
+                                            <td class="cell-actions">
+                                                <div class="table-actions">
+                                                <button class="btn btn-warning btn-sm"
+                                                        data-action="call" data-fn="openEditMajorModal" data-args="{{ major.id }}|{{ major.code|escapejs|urlencode }}|{{ major.name|escapejs|urlencode }}|{{ major.is_active|yesno:'true,false' }}">
+                                                    <i class="fas fa-edit"></i> Edit
+                                                </button>
+                                                <button class="btn btn-danger btn-sm delete-major-btn"
+                                                        data-major-id="{{ major.id }}"
+                                                        data-major-code="{{ major.code }}">
+                                                    <i class="fas fa-trash"></i> Delete
+                                                </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                        <tr class="majors-direct-row">
+                                            <td colspan="3"><em>Students under {{ program.code }} with no major selected</em></td>
+                                            <td colspan="2">{{ entry.direct_count }} student{{ entry.direct_count|pluralize }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endwith %}
                     {% empty %}
                     <tr>
                         <td colspan="5" class="text-center">No programs found. Click "Add Program" to get started.</td>
@@ -97,7 +160,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-plus"></i> Add New Program</h3>
-            <button class="modal-close" onclick="closeModal('addProgramModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="addProgramModal">&times;</button>
         </div>
         <form method="POST">
             {% csrf_token %}
@@ -105,18 +168,18 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label for="addCode">Program Code *</label>
-                    <input type="text" id="addCode" name="code" class="form-control" 
+                    <input type="text" id="addCode" name="code" class="form-control"
                            placeholder="e.g., BSCS, BSIT" required maxlength="50">
                     <small class="form-text">Short program code</small>
                 </div>
                 <div class="form-group">
                     <label for="addName">Program Name *</label>
-                    <input type="text" id="addName" name="name" class="form-control" 
+                    <input type="text" id="addName" name="name" class="form-control"
                            placeholder="e.g., Bachelor of Science in Computer Science" required maxlength="200">
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addProgramModal')">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="addProgramModal">
                     <i class="fas fa-times"></i> Cancel
                 </button>
                 <button type="submit" class="btn btn-primary">
@@ -132,7 +195,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-edit"></i> Edit Program</h3>
-            <button class="modal-close" onclick="closeModal('editProgramModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="editProgramModal">&times;</button>
         </div>
         <form method="POST">
             {% csrf_token %}
@@ -141,13 +204,13 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label for="editCode">Program Code *</label>
-                    <input type="text" id="editCode" name="code" class="form-control" 
+                    <input type="text" id="editCode" name="code" class="form-control"
                            required maxlength="50">
                     <small class="form-text">Changing the code may require updating students manually</small>
                 </div>
                 <div class="form-group">
                     <label for="editName">Program Name *</label>
-                    <input type="text" id="editName" name="name" class="form-control" 
+                    <input type="text" id="editName" name="name" class="form-control"
                            required maxlength="200">
                 </div>
                 <div class="form-group">
@@ -158,7 +221,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editProgramModal')">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="editProgramModal">
                     <i class="fas fa-times"></i> Cancel
                 </button>
                 <button type="submit" class="btn btn-primary">
@@ -174,7 +237,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-exclamation-triangle"></i> Confirm Delete</h3>
-            <button class="modal-close" onclick="closeModal('deleteProgramModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="deleteProgramModal">&times;</button>
         </div>
         <form method="POST">
             {% csrf_token %}
@@ -184,7 +247,7 @@
                 <p id="deleteMessage"></p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('deleteProgramModal')">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="deleteProgramModal">
                     <i class="fas fa-times"></i> Cancel
                 </button>
                 <button type="submit" class="btn btn-danger" id="confirmDeleteBtn">
@@ -195,140 +258,113 @@
     </div>
 </div>
 
-<style>
-.alert {
-    padding: 12px 16px;
-    border-radius: 8px;
-    margin-bottom: 8px;
-    position: relative;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
+<!-- Add Major Modal -->
+<div id="addMajorModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-plus"></i> Add New Major</h3>
+            <button class="modal-close" data-action="close-modal" data-target="addMajorModal">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_major">
+            <input type="hidden" id="addMajorProgramId" name="program_id">
+            <div class="modal-body">
+                <p id="addMajorProgramLabel" class="form-text mb-2"></p>
+                <div class="form-group">
+                    <label for="addMajorCode">Major Code *</label>
+                    <input type="text" id="addMajorCode" name="code" class="form-control"
+                           placeholder="e.g., HRM, AUTO" required maxlength="50">
+                    <small class="form-text">Short major code</small>
+                </div>
+                <div class="form-group">
+                    <label for="addMajorName">Major Name *</label>
+                    <input type="text" id="addMajorName" name="name" class="form-control"
+                           placeholder="e.g., Human Resource Management" required maxlength="200">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="addMajorModal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Major
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
-.alert-success {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success);
-    border-left: 4px solid var(--success);
-}
+<!-- Edit Major Modal -->
+<div id="editMajorModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-edit"></i> Edit Major</h3>
+            <button class="modal-close" data-action="close-modal" data-target="editMajorModal">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_major">
+            <input type="hidden" id="editMajorId" name="major_id">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="editMajorCode">Major Code *</label>
+                    <input type="text" id="editMajorCode" name="code" class="form-control"
+                           required maxlength="50">
+                </div>
+                <div class="form-group">
+                    <label for="editMajorName">Major Name *</label>
+                    <input type="text" id="editMajorName" name="name" class="form-control"
+                           required maxlength="200">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="editMajorIsActive" name="is_active">
+                        Active (appears in dropdowns)
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="editMajorModal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
-.alert-error, .alert-danger {
-    background: rgba(239, 68, 68, 0.1);
-    color: var(--danger);
-    border-left: 4px solid var(--danger);
-}
+<!-- Delete Major Confirmation Modal -->
+<div id="deleteMajorModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-exclamation-triangle"></i> Confirm Delete</h3>
+            <button class="modal-close" data-action="close-modal" data-target="deleteMajorModal">&times;</button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete_major">
+            <input type="hidden" id="deleteMajorId" name="major_id">
+            <div class="modal-body">
+                <p id="deleteMajorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="deleteMajorModal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="submit" class="btn btn-danger" id="confirmDeleteMajorBtn">
+                    <i class="fas fa-trash"></i> Delete Major
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
-.alert-warning {
-    background: rgba(245, 158, 11, 0.1);
-    color: var(--warning);
-    border-left: 4px solid var(--warning);
-}
 
-.alert-info {
-    background: rgba(6, 182, 212, 0.1);
-    color: var(--info);
-    border-left: 4px solid var(--info);
-}
-
-.alert-close {
-    background: none;
-    border: none;
-    font-size: 24px;
-    color: inherit;
-    cursor: pointer;
-    padding: 0;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.6;
-}
-
-.alert-close:hover {
-    opacity: 1;
-}
-</style>
-
-<script>
-// Program stats passed from server
-const programStats = {{ program_stats|safe }};
-
-// Update student counts on page load
-document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('[data-program-code]').forEach(cell => {
-        const code = cell.getAttribute('data-program-code');
-        const count = programStats[code] || 0;
-        cell.querySelector('.student-count').textContent = count + ' students';
-    });
-    
-    // Setup delete button handlers
-    document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const id = this.getAttribute('data-program-id');
-            const code = this.getAttribute('data-program-code');
-            const count = programStats[code] || 0;
-            confirmDelete(id, code, count);
-        });
-    });
-});
-
-function openAddModal() {
-    document.getElementById('addProgramModal').classList.add('active');
-}
-
-function openEditModal(id, code, name, isActive) {
-    document.getElementById('editProgramId').value = id;
-    document.getElementById('editCode').value = code;
-    document.getElementById('editName').value = name;
-    document.getElementById('editIsActive').checked = isActive;
-    document.getElementById('editProgramModal').classList.add('active');
-}
-
-function confirmDelete(id, code, studentCount) {
-    document.getElementById('deleteProgramId').value = id;
-    const message = studentCount > 0 
-        ? 'Cannot delete <strong>' + code + '</strong> because <strong>' + studentCount + ' students</strong> are enrolled in this program. Please reassign them first.'
-        : 'Are you sure you want to delete program <strong>' + code + '</strong>?';
-    document.getElementById('deleteMessage').innerHTML = message;
-    
-    // Disable delete button if students exist
-    const deleteBtn = document.getElementById('confirmDeleteBtn');
-    if (studentCount > 0) {
-        deleteBtn.disabled = true;
-        deleteBtn.style.opacity = '0.5';
-        deleteBtn.style.cursor = 'not-allowed';
-    } else {
-        deleteBtn.disabled = false;
-        deleteBtn.style.opacity = '1';
-        deleteBtn.style.cursor = 'pointer';
-    }
-    
-    document.getElementById('deleteProgramModal').classList.add('active');
-}
-
-function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('active');
-}
-
-// Close modal on outside click
-window.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal')) {
-        e.target.classList.remove('active');
-    }
-});
-
-// Auto-hide alerts after 5 seconds
-document.addEventListener('DOMContentLoaded', () => {
-    const alerts = document.querySelectorAll('.alert');
-    alerts.forEach(alert => {
-        setTimeout(() => {
-            alert.style.transition = 'opacity 0.3s';
-            alert.style.opacity = '0';
-            setTimeout(() => alert.remove(), 300);
-        }, 5000);
-    });
-});
-</script>
+{{ program_stats|json_script:"program-stats" }}
+{{ major_stats|json_script:"major-stats" }}
+<script src="{% static 'qrapp/js/manage_programs.js' %}" defer></script>
 
 {% endblock %}

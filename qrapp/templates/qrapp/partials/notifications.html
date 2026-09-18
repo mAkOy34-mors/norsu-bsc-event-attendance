@@ -1,0 +1,8 @@
+{% load static %}
+{# SweetAlert2 bridge: loads Swal + notify.js; Django messages render as toasts. #}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'qrapp/js/notify.js' %}"></script>
+{% if messages %}
+<div class="django-messages" hidden
+    {% for message in messages %}data-tag-{{ forloop.counter0 }}="{{ message.tags|default:'info' }}" data-text-{{ forloop.counter0 }}="{{ message }}"{% endfor %}></div>
+{% endif %}

@@ -1,0 +1,88 @@
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(160deg, #0a4d7a, #0f2f4f);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .confirm-box {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+            text-align: center;
+            width: 400px;
+        }
+
+        h2 {
+            color: #dc3545;
+            margin-bottom: 15px;
+        }
+
+        p {
+            color: #555;
+            margin-bottom: 25px;
+        }
+
+        .password-input {
+            width: 100%;
+            padding: 12px;
+            margin: 15px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        .error-message {
+            color: #dc3545;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 9px 16px;
+            border-radius: 8px;
+            border: none;
+            font-size: 13.5px;
+            cursor: pointer;
+            transition: 0.3s ease;
+        }
+
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #c82333;
+        }
+
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+            margin-left: 10px;
+            text-decoration: none;
+        }
+
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+
+        /* Django messages styling */
+        .alert {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }

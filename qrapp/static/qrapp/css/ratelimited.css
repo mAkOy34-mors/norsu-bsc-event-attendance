@@ -1,0 +1,74 @@
+/* Rate-limited (429) page */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Manrope', 'Segoe UI', Arial, sans-serif;
+    background: #f0f4f9;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.rl-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(15, 47, 79, 0.08);
+    max-width: 420px;
+    width: 100%;
+    padding: 40px 32px;
+    text-align: center;
+}
+
+.rl-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 18px;
+    border-radius: 50%;
+    background: rgba(9, 132, 227, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+}
+
+.rl-code {
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 44px;
+    font-weight: 700;
+    color: #2d3436;
+    line-height: 1.1;
+}
+
+.rl-card h2 {
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 20px;
+    color: #2d3436;
+    margin: 6px 0 12px;
+}
+
+.rl-card p {
+    color: #636e72;
+    font-size: 15px;
+    line-height: 1.5;
+    margin-bottom: 24px;
+}
+
+.rl-btn {
+    display: inline-block;
+    background: #0984e3;
+    color: #fff;
+    text-decoration: none;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 15px;
+}
+
+.rl-btn:hover { background: #0770c4; }
+
+.rl-footer {
+    margin-top: 28px;
+    font-size: 12px;
+    color: #b2bec3;
+}

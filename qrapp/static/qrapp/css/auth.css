@@ -1,0 +1,267 @@
+/* auth.css — shared styles for the login and register pages.
+   Replaces the duplicated login.css / register.css with one polished design:
+   icon-inset inputs, inline alert banners, and password show/hide toggles. */
+
+:root {
+    --primary: #0984e3;
+    --secondary: #0a4d7a;
+    --primary-tint: #e7f2fc;
+    --dark: #2d3436;
+    --success: #00b894;
+    --warning: #b8860b;
+    --danger: #d63031;
+    --gray: #636e72;
+    --border: #e0e6ed;
+    --border-radius: 12px;
+    --shadow: 0 10px 30px rgba(15, 47, 79, 0.12);
+    --transition: all 0.2s ease;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Manrope', 'Segoe UI', sans-serif;
+    line-height: 1.6;
+    color: var(--dark);
+    background:
+        radial-gradient(1100px 500px at 85% -10%, rgba(9, 132, 227, 0.14), transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, rgba(10, 77, 122, 0.12), transparent 55%),
+        #f0f4f9;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 24px 20px;
+}
+
+.auth-container {
+    width: 100%;
+    max-width: 420px;
+}
+
+.auth-card {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 2.25rem 2rem;
+    margin-bottom: 1rem;
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 1.75rem;
+}
+
+.auth-logo-badge {
+    width: 58px;
+    height: 58px;
+    margin: 0 auto 0.9rem;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    box-shadow: 0 6px 16px rgba(9, 132, 227, 0.35);
+}
+
+.auth-logo {
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--secondary);
+    letter-spacing: 0.2px;
+}
+
+.auth-header h2 {
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 1.15rem;
+    color: var(--dark);
+    margin-top: 0.35rem;
+}
+
+.auth-sub {
+    color: var(--gray);
+    font-size: 0.88rem;
+    margin-top: 0.2rem;
+}
+
+/* ---- inline alert banners (Django messages) ---- */
+.alert {
+    padding: 11px 14px;
+    border-radius: 10px;
+    margin-bottom: 1.1rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+    border: 1px solid transparent;
+}
+
+.alert i { margin-top: 2px; }
+
+.alert-success {
+    background: #e9f9f3;
+    border-color: #bfe9da;
+    color: #0b6e4f;
+}
+
+.alert-error {
+    background: #fdf0f0;
+    border-color: #f2cfcf;
+    color: #a33033;
+}
+
+.alert-warning {
+    background: #fdf8ec;
+    border-color: #ecdcae;
+    color: #8a6508;
+}
+
+.alert-info {
+    background: #eef5fd;
+    border-color: #cfe3f7;
+    color: #1d5d90;
+}
+
+/* ---- form fields ---- */
+.form-group {
+    margin-bottom: 1.15rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: var(--dark);
+}
+
+.input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon {
+    position: absolute;
+    left: 13px;
+    color: #9aa7b4;
+    font-size: 0.95rem;
+    pointer-events: none;
+}
+
+input {
+    width: 100%;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: var(--dark);
+    background: #fbfcfe;
+    transition: var(--transition);
+}
+
+.input-wrap input { padding-left: 38px; }
+.input-wrap.has-toggle input { padding-right: 42px; }
+
+input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(9, 132, 227, 0.15);
+}
+
+/* eye show/hide button */
+.password-toggle {
+    position: absolute;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    color: #9aa7b4;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.password-toggle:hover {
+    color: var(--primary);
+    background: var(--primary-tint);
+}
+
+.hint {
+    font-size: 0.78rem;
+    color: var(--gray);
+    margin-top: 0.35rem;
+}
+
+.btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, var(--primary), #0b6fbf);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    font-family: inherit;
+    font-size: 0.98rem;
+    letter-spacing: 0.2px;
+    transition: var(--transition);
+    box-shadow: 0 4px 12px rgba(9, 132, 227, 0.3);
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(9, 132, 227, 0.4);
+}
+
+.btn:active { transform: translateY(0); }
+
+.auth-switch {
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--gray);
+}
+
+.auth-switch a {
+    color: var(--primary);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.auth-switch a:hover { text-decoration: underline; }
+
+.auth-footer {
+    text-align: center;
+    color: var(--gray);
+    font-size: 0.82rem;
+}
+
+.pending-note {
+    margin-top: 0.9rem;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #fdf8ec;
+    border: 1px dashed #ecdcae;
+    color: #8a6508;
+    font-size: 0.82rem;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}

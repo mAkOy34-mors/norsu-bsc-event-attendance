@@ -19,7 +19,10 @@ STUDENT_EXPORT_HEADERS = [
 
 
 def filter_students_queryset(params):
-    students = Student.objects.select_related("college", "program").all()
+    # select_related covers every FK the row/QR serializers touch
+    # (college_code/program_code/major_name properties) — without "major"
+    # each student's major_name access fired its own query (N+1).
+    students = Student.objects.select_related("college", "program", "major").all()
 
     college = (params.get("college") or "").strip()
     program = (params.get("program") or "").strip()
@@ -35,7 +38,7 @@ def filter_students_queryset(params):
     if year:
         students = students.filter(year=year)
     if major:
-        students = students.filter(major__iexact=major)
+        students = students.filter(major__name__iexact=major)
     if gender:
         gender_upper = gender.upper()
         if gender_upper in ("M", "MALE"):
@@ -47,7 +50,7 @@ def filter_students_queryset(params):
             Q(name__icontains=search)
             | Q(student_id__icontains=search)
             | Q(program__code__icontains=search)
-            | Q(major__icontains=search)
+            | Q(college__code__icontains=search)
         )
 
     return students.order_by("name", "student_id")
@@ -61,7 +64,7 @@ def student_row(student):
         student.college_code,
         student.program_code,
         student.year,
-        student.major,
+        student.major_name,
     ]
 
 

@@ -1,79 +1,10 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Edit Student</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-
-        .form-container {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 6px 15px rgba(0,0,0,0.2);
-            width: 400px;
-            text-align: center;
-        }
-
-        h2 {
-            margin-bottom: 20px;
-            color: #333;
-        }
-
-        label {
-            display: block;
-            margin-top: 10px;
-            text-align: left;
-            font-weight: bold;
-            color: #555;
-        }
-
-        input, select {
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-        }
-
-        .btn {
-            display: inline-block;
-            margin-top: 20px;
-            padding: 12px 20px;
-            border-radius: 8px;
-            border: none;
-            font-size: 15px;
-            cursor: pointer;
-            transition: 0.3s ease;
-        }
-
-        .btn-save {
-            background: #28a745;
-            color: white;
-        }
-
-        .btn-save:hover {
-            background: #218838;
-        }
-
-        .btn-cancel {
-            background: #6c757d;
-            color: white;
-            margin-left: 10px;
-        }
-
-        .btn-cancel:hover {
-            background: #5a6268;
-        }
-    </style>
+    <link rel="stylesheet" href="{% static 'qrapp/css/edit_student.css' %}">
 </head>
 <body>
     <div class="form-container">
@@ -105,12 +36,14 @@
             <input type="number" name="year" value="{{ student.year }}" required>
 
             <label>Major:</label>
-            <input type="text" name="major" value="{{ student.major }}" required>
+            <input type="text" name="major" value="{{ student.major_name }}" placeholder="Leave blank if none">
 
             <button type="submit" class="btn btn-save">Save Changes</button>
             <a href="{% url 'admin_dashboard' %}" class="btn btn-cancel">Cancel</a>
         </form>
     </div>
+
+    {% include 'qrapp/partials/notifications.html' %}
 </body>
 </html>
 

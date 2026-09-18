@@ -92,6 +92,16 @@ class Dashboard {
             section.classList.add('active');
         }
 
+        // Keep the breadcrumb in sync with the visible section
+        const crumb = document.getElementById('breadcrumbCurrent');
+        if (crumb) {
+            const label = element?.querySelector('span')?.textContent.trim()
+                || element?.textContent.trim()
+                || section?.querySelector('.card-header h3')?.textContent.trim()
+                || sectionId;
+            crumb.textContent = label;
+        }
+
         // Update nav
         document.querySelectorAll('.sidebar-nav a').forEach(link => {
             link.classList.remove('active');
@@ -106,8 +116,17 @@ class Dashboard {
         this.currentSection = sectionId;
         this.applyFilters();
 
+        // Keep ?section= in the URL (server-rendered on refresh) instead of
+        // a hash, so deep links survive reloads even without JS.
         if (document.getElementById(sectionId) && history.replaceState) {
-            history.replaceState(null, '', '#' + sectionId);
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.set('section', sectionId);
+                url.hash = '';
+                history.replaceState(null, '', url);
+            } catch (e) {
+                history.replaceState(null, '', '?section=' + sectionId);
+            }
         }
     }
 
@@ -115,6 +134,11 @@ class Dashboard {
         const globalStats = document.getElementById('globalStats');
         if (globalStats) {
             globalStats.style.display = sectionId === 'dashboard' ? 'block' : 'none';
+        }
+        // The "Welcome back" hero belongs to the Overview only.
+        const header = document.querySelector('.header');
+        if (header) {
+            header.style.display = sectionId === 'dashboard' ? 'flex' : 'none';
         }
     }
 
@@ -235,21 +259,20 @@ class Dashboard {
         this.loadData(params);
     }
 
-    async loadData(params) {
-        let endpoint = '';
-        
-        switch (this.currentSection) {
-            case 'students':
-                endpoint = '/ajax/student-list/';
-                break;
-            case 'dashboard':
-                endpoint = '/ajax/dashboard-data/';
-                break;
-            case 'reports':
-                endpoint = '/ajax/reports-data/';
-                break;
-            default:
-                return;
+        async loadData(params) {
+        // Resolve the endpoint from Django-rendered URLs so the /qrapp/ prefix
+        // (or any future mount change) is applied automatically.
+        const endpointMap = {
+            students:  window.appUrls?.ajaxStudentList,
+            dashboard: window.appUrls?.ajaxDashboardData,
+            reports:   window.appUrls?.ajaxReportsData,
+        };
+
+        const endpoint = endpointMap[this.currentSection];
+        if (!endpoint) {
+            // Sections without AJAX tables (e.g. "approve") are fully
+            // server-rendered; nothing to fetch.
+            return;
         }
 
         try {
@@ -263,7 +286,7 @@ class Dashboard {
             if (!response.ok) throw new Error('Network error');
 
             const data = await response.json();
-            
+
             if (data.success) {
                 this.updateUI(data);
             } else {
@@ -312,13 +335,17 @@ class Dashboard {
                 <td>${student.year}</td>
                 <td>${this.escapeHtml(student.major)}</td>
                 <td>
-                    <a href="/edit_student/${student.id}/" class="btn btn-warning btn-sm">
-                        <i class="fas fa-edit"></i> Edit
-                    </a>
-                    <a href="/delete_student/${student.id}/" class="btn btn-danger btn-sm" 
-                       onclick="return confirm('Delete this student?');">
-                        <i class="fas fa-trash"></i> Delete
-                    </a>
+                    <div class="table-actions">
+                        <button type="button" class="btn btn-warning btn-sm"
+                           data-action="open-edit-student"
+                           data-payload='{"id": ${student.id}, "studentId": ${JSON.stringify(student.student_id || "")}, "name": ${JSON.stringify(student.name || "")}, "sex": ${JSON.stringify(student.sex || "M")}, "college": ${JSON.stringify(student.college || "")}, "program": ${JSON.stringify(student.program || "")}, "year": ${JSON.stringify(String(student.year || ""))}, "major": ${JSON.stringify(student.major || "")}}'>
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <a href="${(window.appUrls && window.appUrls.deleteStudent ? window.appUrls.deleteStudent : '/qrapp/delete_student/0/').replace('/0/', '/' + student.id + '/')}" class="btn btn-danger btn-sm"
+                           data-delete-student="${student.id}">
+                            <i class="fas fa-trash"></i> Del
+                        </a>
+                    </div>
                 </td>
             </tr>
         `).join('');
@@ -564,10 +591,35 @@ document.addEventListener('DOMContentLoaded', () => {
     window.dashboard = new Dashboard();
     initSidebarToggle();
 
-    const hash = (window.location.hash || '').replace('#', '');
-    if (hash && document.getElementById(hash)) {
-        const link = document.querySelector(`.sidebar-nav a[data-section="${hash}"]`);
-        window.dashboard.showSection(hash, link);
+    // Hydrate server-rendered progress bars (width passed via data-bar)
+    document.querySelectorAll('.breakdown-bar span[data-bar]').forEach(span => {
+        span.style.width = (span.dataset.bar || 0) + '%';
+    });
+
+    // Topbar quick search: funnels into the dashboard's search filter.
+    const topbarSearch = document.getElementById('topbarSearch');
+    topbarSearch?.addEventListener('input', () => {
+        const query = topbarSearch.value;
+        document.querySelectorAll('.filter-search[data-filter="search"]').forEach(field => {
+            field.value = query;
+        });
+        if (query && typeof window.dashboard !== 'undefined') {
+            window.dashboard.debounce(() => window.dashboard.applyFilters(), 400)();
+        }
+    });
+
+    // Prefer ?section= (server-rendered deep links); fall back to legacy
+    // #hash links from old bookmarks.
+    let initialSection = null;
+    try {
+        initialSection = new URLSearchParams(window.location.search).get('section');
+    } catch (e) { /* ignore */ }
+    if (!initialSection) {
+        initialSection = (window.location.hash || '').replace('#', '');
+    }
+    if (initialSection && document.getElementById(initialSection)) {
+        const link = document.querySelector(`.sidebar-nav a[data-section="${initialSection}"]`);
+        window.dashboard.showSection(initialSection, link);
     }
 });
 
@@ -636,6 +688,25 @@ function navigateDashboardSection(link) {
     }
     return true;
 }
+
+// SweetAlert-based delete confirm for student rows (delegated)
+document.addEventListener('click', function (e) {
+    const link = e.target.closest('[data-delete-student]');
+    if (!link) return;
+    e.preventDefault();
+    confirmAction({
+        title: 'Delete this student?',
+        text: 'This student will be removed permanently.',
+        confirmText: 'Yes, delete student',
+    }).then(function (ok) {
+        if (ok) {
+            const base = (window.appUrls && window.appUrls.deleteStudent)
+                ? window.appUrls.deleteStudent
+                : '/qrapp/delete_student/0/';
+            window.location.href = base.replace('/0/', '/' + link.dataset.deleteStudent + '/');
+        }
+    });
+});
 
 // Modal functions
 function openModal(modalId) {
@@ -709,10 +780,10 @@ function applyPrintOptions() {
     let printContent = '<html><head><title>Attendance Report</title>';
     printContent += '<style>';
     printContent += 'body { font-family: Arial, sans-serif; padding: 20px; }';
-    printContent += 'h1, h2 { color: #4361ee; }';
+    printContent += 'h1, h2 { color: #0984e3; }';
     printContent += 'table { width: 100%; border-collapse: collapse; margin: 20px 0; }';
     printContent += 'th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }';
-    printContent += 'th { background-color: #4361ee; color: white; }';
+    printContent += 'th { background-color: #0984e3; color: white; }';
     printContent += 'tr:nth-child(even) { background-color: #f2f2f2; }';
     printContent += '.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }';
     printContent += '.stat-box { padding: 15px; background: #f5f7fa; border-radius: 8px; }';
@@ -781,7 +852,7 @@ function applyPrintOptions() {
     });
 
     printContent += '</tbody></table>';
-    printContent += '<button onclick="window.print()" style="margin: 20px 0; padding: 10px 20px; background: #4361ee; color: white; border: none; border-radius: 5px; cursor: pointer;">Print Report</button>';
+    printContent += '<button onclick="window.print()" style="margin: 20px 0; padding: 10px 20px; background: #0984e3; color: white; border: none; border-radius: 5px; cursor: pointer;">Print Report</button>';
     printContent += '</body></html>';
 
     printWindow.document.write(printContent);
@@ -793,126 +864,103 @@ function applyPrintOptions() {
 
 // Export Options Handler
 function applyExportOptions() {
-    // Collect filter values
-    const filters = {
-        event: document.getElementById('exportEvent')?.value || '',
-        college: document.getElementById('exportCollege')?.value || '',
-        program: document.getElementById('exportProgram')?.value || '',
-        dateFrom: document.getElementById('exportDateFrom')?.value || '',
-        dateTo: document.getElementById('exportDateTo')?.value || '',
-        timeFrom: document.getElementById('exportTimeFrom')?.value || '',
-        timeTo: document.getElementById('exportTimeTo')?.value || '',
-        gender: document.getElementById('exportGender')?.value || '',
-        format: document.getElementById('exportFormat')?.value || 'csv',
-        includeHeaders: document.getElementById('exportIncludeHeaders')?.checked,
-        includeSummary: document.getElementById('exportIncludeSummary')?.checked
+    // Send the filters to the server and export EVERY matching attendance
+    // record. (The old version scraped the reports table, so only the page
+    // of rows currently on screen was exported and the date/time/event/gender
+    // boxes were ignored.)
+    const params = new URLSearchParams();
+    const map = {
+        event: 'exportEvent',
+        college: 'exportCollege',
+        program: 'exportProgram',
+        year: 'exportYear',
+        major: 'exportMajor',
+        dateFrom: 'exportDateFrom',
+        dateTo: 'exportDateTo',
+        timeFrom: 'exportTimeFrom',
+        timeTo: 'exportTimeTo',
+        gender: 'exportGender',
+        format: 'exportFormat',
     };
-
-    // Get filtered table data
-    const table = document.getElementById('reportsTable');
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr')).filter(row => 
-        !row.classList.contains('pagination-hidden') && row.cells.length > 1
-    );
-
-    // Filter rows based on criteria
-    let filteredRows = rows.filter(row => {
-        const cells = row.cells;
-        let matches = true;
-
-        // College filter
-        if (filters.college && cells[2]?.textContent.trim() !== filters.college) {
-            matches = false;
-        }
-
-        // Program filter
-        if (filters.program && cells[3]?.textContent.trim() !== filters.program) {
-            matches = false;
-        }
-
-        return matches;
+    Object.entries(map).forEach(([param, id]) => {
+        const value = document.getElementById(id)?.value || '';
+        if (value) params.append(param, value);
     });
+    params.append('includeHeaders', document.getElementById('exportIncludeHeaders')?.checked ? '1' : '0');
+    params.append('includeSummary', document.getElementById('exportIncludeSummary')?.checked ? '1' : '0');
 
-    // Build CSV content
-    let csvContent = '';
-    
-    // Add event info as first line if provided
-    if (filters.event) {
-        csvContent += `Event/Occasion: ${filters.event}\n`;
-    }
-    
-    // Add generation date
-    csvContent += `Generated: ${new Date().toLocaleString()}\n`;
-    
-    // Add date range if provided
-    if (filters.dateFrom || filters.dateTo) {
-        csvContent += 'Date Range: ';
-        csvContent += filters.dateFrom ? `From ${filters.dateFrom}` : '';
-        csvContent += filters.dateTo ? ` To ${filters.dateTo}` : '';
-        csvContent += '\n';
-    }
-    
-    csvContent += '\n';
-
-    // Add summary if enabled
-    if (filters.includeSummary) {
-        const totalRecords = filteredRows.length;
-        const completedRecords = filteredRows.filter(row => 
-            row.cells[9]?.textContent.includes('COMPLETED')
-        ).length;
-        const pendingRecords = filteredRows.filter(row => 
-            row.cells[9]?.textContent.includes('IN') || row.cells[9]?.textContent.includes('PRESENT')
-        ).length;
-        
-        csvContent += 'SUMMARY STATISTICS\n';
-        csvContent += `Total Records,${totalRecords}\n`;
-        csvContent += `Completed,${completedRecords}\n`;
-        csvContent += `Pending,${pendingRecords}\n`;
-        csvContent += '\n';
+    const exportUrl = (window.appUrls && window.appUrls.exportAttendance) || '/qrapp/export_attendance/';
+    const format = document.getElementById('exportFormat')?.value || 'csv';
+    const btn = document.querySelector('[data-action="apply-export"]');
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
+        btn.disabled = true;
     }
 
-    // Add column headers if enabled
-    if (filters.includeHeaders) {
-        csvContent += 'ID,Name,College,Program,Year,Major,Time In,Time Out,Date,Status\n';
-    }
-
-    // Add data rows
-    filteredRows.forEach(row => {
-        const rowData = [];
-        for (let i = 0; i < row.cells.length; i++) {
-            let cellText = row.cells[i].textContent.trim();
-            // Escape quotes and wrap in quotes if contains comma
-            if (cellText.includes(',') || cellText.includes('"') || cellText.includes('\n')) {
-                cellText = `"${cellText.replace(/"/g, '""')}"`;
+    fetch(exportUrl + '?' + params.toString())
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    throw new Error(text || 'Export failed');
+                });
             }
-            rowData.push(cellText);
-        }
-        csvContent += rowData.join(',') + '\n';
-    });
-
-    // Generate filename
-    let filename = 'attendance_report';
-    if (filters.event) {
-        filename += '_' + filters.event.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    }
-    filename += '_' + new Date().toISOString().split('T')[0];
-    filename += filters.format === 'xlsx' ? '.xlsx' : '.csv';
-
-    // Create download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // Show success message (could be improved with a toast notification)
-    alert(`Report exported successfully as ${filename}`);
-
-    // Close modal
-    closeModal('exportModal');
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            const filename = match ? match[1] : `attendance_report.${format === 'xlsx' ? 'xlsx' : 'csv'}`;
+            return response.blob().then(blob => ({ blob, filename }));
+        })
+        .then(({ blob, filename }) => {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            if (window.notify) notify.toast('Report exported as ' + filename, 'success');
+            closeModal('exportModal');
+        })
+        .catch(error => {
+            if (window.notify) {
+                notify.error('Export failed', error.message || 'Could not export attendance records.');
+            } else {
+                alert(error.message || 'Export failed');
+            }
+        })
+        .finally(() => {
+            if (btn) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        });
 }
+
+/*
+ * Sticky breadcrumbs polish.
+ * The bar is position:sticky; when the page is scrolled far enough that it is
+ * actually stuck, add .is-stuck so it gains a soft shadow smoothly (CSS
+ * transition) instead of overlapping content invisibly.
+ */
+(function () {
+    var bar = document.querySelector('.breadcrumbs');
+    if (!bar) return;
+
+    var ticking = false;
+
+    function update() {
+        ticking = false;
+        var stuck = bar.getBoundingClientRect().top <= 1;
+        bar.classList.toggle('is-stuck', stuck);
+    }
+
+    window.addEventListener('scroll', function () {
+        if (!ticking) {
+            ticking = true;
+            window.requestAnimationFrame(update);
+        }
+    }, { passive: true });
+
+    update();
+})();

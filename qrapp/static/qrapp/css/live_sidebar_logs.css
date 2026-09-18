@@ -1,0 +1,180 @@
+/* live_sidebar_logs.css
+ * Styles for the realtime "Live Logs" sidebar widget (partials/live_logs.html).
+ * Kept separate from style.css so pages with their own sidebar styles
+ * (e.g. dashboard_home.html) can include the widget without pulling in
+ * the whole admin stylesheet.
+ */
+
+.sidebar-logs {
+    margin: 4px 16px 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-soft, #edf0f4);
+    border-radius: 12px;
+    background: var(--surface-2, #f4f6f8);
+}
+
+.sidebar-logs-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 8px !important;
+}
+
+.sidebar-logs-title i { color: var(--primary, #0984e3); }
+
+/* Pulsing "live" indicator dot */
+.live-dot {
+    width: 8px;
+    height: 8px;
+    margin-left: auto;
+    border-radius: 50%;
+    background: var(--gray-light, #b2bec3);
+    flex: 0 0 auto;
+}
+.live-dot.is-polling {
+    background: var(--warning, #b8860b);
+    animation: liveDotPulse 2s ease-in-out infinite;
+}
+.live-dot.is-live {
+    background: var(--success, #00b894);
+    animation: liveDotPulse 1.5s ease-in-out infinite;
+}
+@keyframes liveDotPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+.sidebar-logs-scroll {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    scrollbar-width: thin;
+}
+.sidebar-logs-scroll::-webkit-scrollbar { width: 5px; }
+.sidebar-logs-scroll::-webkit-scrollbar-thumb { background: #d6dce5; border-radius: 999px; }
+
+.sidebar-logs-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--gray, #64748b);
+    font-size: 12px;
+    padding: 14px 6px;
+}
+.sidebar-logs-empty i { opacity: 0.6; }
+
+.sidebar-log-item {
+    background: #fff;
+    border: 1px solid var(--border-soft, #edf0f4);
+    border-radius: 8px;
+    padding: 6px 9px;
+}
+
+.sidebar-log-item.is-new {
+    animation: logFlash 2.5s ease-out;
+}
+@keyframes logFlash {
+    0% { background: var(--primary-tint, #e7f2fc); border-color: var(--primary, #0984e3); transform: translateY(-3px); opacity: 0; }
+    15% { opacity: 1; transform: translateY(0); }
+    100% { background: #fff; border-color: var(--border-soft, #edf0f4); }
+}
+
+.log-row-main { display: flex; align-items: center; gap: 7px; min-width: 0; }
+
+.log-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    border-radius: 6px;
+    font-size: 10px;
+}
+.log-status.log-in { background: rgba(16, 185, 129, 0.12); color: var(--success, #00b894); }
+.log-status.log-out { background: rgba(245, 158, 11, 0.14); color: var(--warning, #b8860b); }
+
+.log-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--dark, #2d3436);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.log-time {
+    margin-left: auto;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--primary, #0984e3);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.log-row-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    padding-left: 27px;
+    min-width: 0;
+}
+
+.log-id {
+    font-size: 10px;
+    color: var(--gray, #64748b);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.log-event {
+    font-size: 10px;
+    color: var(--gray-light, #b2bec3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.sidebar-logs-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-soft, #edf0f4);
+}
+
+.sidebar-logs-updated {
+    font-size: 10px;
+    color: var(--gray, #64748b);
+    font-weight: 600;
+}
+
+.sidebar-logs-link {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary, #0984e3);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+.sidebar-logs-link:hover { text-decoration: underline; }
+.sidebar-logs-link i { font-size: 9px; }
+
+/* Collapse the widget gracefully on small screens (only inside a sidebar;
+   standalone placements, e.g. dashboard_home's main column, stay visible) */
+@media (max-width: 768px) {
+    .sidebar .sidebar-logs { display: none; }
+}

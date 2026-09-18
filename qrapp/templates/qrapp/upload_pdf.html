@@ -15,6 +15,17 @@
                        accept=".pdf,.csv,.xlsx,.xlsm" required>
                 <small class="form-hint">PDF, CSV, or Excel (.xlsx) — max 10MB</small>
             </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="allowGeneratedIds" name="allow_generated_ids">
+                    Also import rows whose student number is missing or printed twice
+                </label>
+                <small class="form-hint">
+                    Off by default. A row with no student number is stored as
+                    NOID-&lt;PROGRAM&gt;-&lt;YEAR&gt;-&lt;LINE&gt; and a number printed for a second student
+                    gets a -DUP2 suffix, so nothing is left out — review those students.
+                </small>
+            </div>
             <div class="info-callout mt-2">
                 <div class="info-callout-title">Expected columns</div>
                 <p>No. (auto increment), Student No./id, Name, Sex, Course, Year, Major</p>
@@ -23,13 +34,6 @@
         </form>
     </div>
     
-    {% if messages %}
-        <ul class="messages">
-            {% for message in messages %}
-                <li class="{{ message.tags }}">{{ message }}</li>
-            {% endfor %}
-        </ul>
-    {% endif %}
     
     <div class="action-buttons">
         <a href="{% url 'add_student' %}" class="btn">Add Student Manually</a>

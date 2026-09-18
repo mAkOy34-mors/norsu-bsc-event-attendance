@@ -1,0 +1,27 @@
+{% load static %}
+{# Realtime "Live Logs" sidebar widget — polls for new time-in/time-out records. #}
+<link rel="stylesheet" href="{% static 'qrapp/css/live_sidebar_logs.css' %}">
+<div class="sidebar-logs" id="sidebarLogs"
+     data-logs-url="{% url 'ajax_sidebar_logs' %}"
+     data-initial-limit="12">
+    <p class="nav-section-title sidebar-logs-title">
+        <i class="fas fa-stream"></i> Live Logs
+        <span class="live-dot" id="liveLogsDot" title="Live"></span>
+    </p>
+
+    <div class="sidebar-logs-scroll" id="liveLogsList" aria-live="polite">
+        <div class="sidebar-logs-empty" id="liveLogsEmpty">
+            <i class="fas fa-hourglass-half"></i>
+            <span>Waiting for scans…</span>
+        </div>
+    </div>
+
+    <div class="sidebar-logs-footer">
+        <span class="sidebar-logs-updated" id="liveLogsUpdated">—</span>
+        <a href="{% url 'admin_dashboard' %}?section=dashboard" class="sidebar-logs-link">
+            View all <i class="fas fa-arrow-right"></i>
+        </a>
+    </div>
+</div>
+
+<script src="{% static 'qrapp/js/live_sidebar_logs.js' %}" defer></script>

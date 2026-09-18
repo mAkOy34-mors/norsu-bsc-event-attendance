@@ -5,9 +5,13 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Prefetch
 from django.utils import timezone
 from django.conf import settings
+from django.core.cache import caches
+from django.urls import reverse
+from django.middleware.csrf import get_token
+from django_ratelimit.decorators import ratelimit
 from datetime import date, datetime, timedelta
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -15,21 +19,59 @@ from reportlab.lib.units import mm
 from PIL import Image, ImageDraw, ImageFont
 import os
 import io
-import json
 import base64
 import qrcode
 import glob
 
-from .models import Student, Attendance, Event, College, Program
+from .models import Student, Attendance, Event, College, Program, Major, ImportIssue
 from .forms import StudentForm, StudentUploadForm
 from .student_import import import_students_from_file
 from .student_export import export_students_response
+from .attendance_export import export_attendance_response
+from .caching import (
+    build_calendar_cache_key,
+    build_chart_cache_key,
+    build_lookups_cache_key,
+    invalidate_calendar_cache,
+    invalidate_lookup_caches,
+    LOOKUPS_CACHE_TIMEOUT,
+    CALENDAR_CACHE_TIMEOUT,
+)
 from .qr_codes import (
     generate_qr_with_label,
     serialize_qr_list,
     get_filtered_students,
     export_qr_response,
+    qr_image_basename,
 )
+
+
+# ---------------- RATE LIMITING ----------------
+
+def client_username(group, request):
+    """Rate-limit key: authenticated username, falling back to client IP."""
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
+        return user.username
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def ratelimited_view(request, exception=None):
+    """RATELIMIT_VIEW handler: friendly 429 page, JSON for AJAX clients."""
+    wants_json = (
+            request.headers.get("x-requested-with") == "XMLHttpRequest"
+            or request.path.startswith("/ajax/")
+            or request.path == "/save_scan/"
+    )
+    if wants_json:
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Too many requests. Please slow down and try again shortly.",
+            },
+            status=429,
+        )
+    return render(request, "qrapp/ratelimited.html", status=429)
 
 
 def build_calendar_data(today=None):
@@ -37,33 +79,53 @@ def build_calendar_data(today=None):
     from django.urls import reverse
 
     today = today or date.today()
-    events = Event.objects.filter(is_active=True).order_by("event_date", "start_time", "title")
-    calendar_events = [
-        {
-            "id": event.id,
-            "title": event.title,
-            "date": event.event_date.isoformat(),
-            "start_time": event.start_time.strftime("%H:%M") if event.start_time else "",
-            "end_time": event.end_time.strftime("%H:%M") if event.end_time else "",
-            "location": event.location or "",
-            "is_current": event.is_current,
-            "display_window": event.display_window,
-        }
-        for event in events
-    ]
 
-    activity_start = today - timedelta(days=90)
-    activity_end = today + timedelta(days=60)
-    attendance_days = (
-        Attendance.objects.filter(timestamp__date__range=[activity_start, activity_end])
-        .values("timestamp__date")
-        .annotate(count=Count("id"))
-    )
-    attendance_by_date = {
-        row["timestamp__date"].isoformat(): row["count"]
-        for row in attendance_days
-        if row["timestamp__date"]
-    }
+    # The calendar payload is identical for every user on a given day, so it
+    # is cached and shared (invalidated on event/scan changes in
+    # invalidate_calendar_cache / short TTL as a safety net).
+    calendar_cache = caches["lookups"]
+    calendar_key = build_calendar_cache_key(today)
+    cached_payload = calendar_cache.get(calendar_key)
+    calendar_events = None
+    attendance_by_date = None
+    if isinstance(cached_payload, dict):
+        calendar_events = cached_payload.get("events")
+        attendance_by_date = cached_payload.get("attendance_by_date")
+
+    if calendar_events is None or attendance_by_date is None:
+        events = Event.objects.filter(is_active=True).order_by("event_date", "start_time", "title")
+        calendar_events = [
+            {
+                "id": event.id,
+                "title": event.title,
+                "date": event.event_date.isoformat(),
+                "start_time": event.start_time.strftime("%H:%M") if event.start_time else "",
+                "end_time": event.end_time.strftime("%H:%M") if event.end_time else "",
+                "location": event.location or "",
+                "is_current": event.is_current,
+                "display_window": event.display_window,
+            }
+            for event in events
+        ]
+
+        activity_start = today - timedelta(days=90)
+        activity_end = today + timedelta(days=60)
+        attendance_days = (
+            Attendance.objects.filter(timestamp__date__range=[activity_start, activity_end])
+            .values("timestamp__date")
+            .annotate(count=Count("id"))
+        )
+        attendance_by_date = {
+            row["timestamp__date"].isoformat(): row["count"]
+            for row in attendance_days
+            if row["timestamp__date"]
+        }
+
+        calendar_cache.set(
+            calendar_key,
+            {"events": calendar_events, "attendance_by_date": attendance_by_date},
+            timeout=CALENDAR_CACHE_TIMEOUT,
+        )
 
     return {
         "today": today.isoformat(),
@@ -199,6 +261,7 @@ def build_event_analytics(students_qs, scanned_records, report_rows=None):
     }
 
 
+@ratelimit(key=client_username, rate='60/m', block=True)
 @staff_member_required
 def dashboard_home(request):
     """Clean dashboard with only analytics and shortcuts"""
@@ -213,21 +276,47 @@ def dashboard_home(request):
     # Count stats
     today_scanned_students = scanned_records.values_list("student__id", flat=True).distinct()
     not_scanned = students.exclude(id__in=today_scanned_students)
+    scanned_records = scanned_records.order_by("-timestamp", "-id")
     present_in = scanned_records.filter(status="IN")
     present_out = scanned_records.filter(status="OUT")
 
-    # Last 7 days attendance overview (real chart data)
-    week_labels = []
-    week_check_in = []
-    week_check_out = []
-    for offset in range(6, -1, -1):
-        day = today - timedelta(days=offset)
-        week_labels.append(day.strftime("%a"))
-        day_qs = Attendance.objects.filter(timestamp__date=day)
-        week_check_in.append(day_qs.filter(status="IN").count())
-        week_check_out.append(day_qs.filter(status="OUT").count())
+    # Last 7 days attendance overview (real chart data).
+    # Cached + computed with one grouped query (was 14) since dashboards are
+    # hit constantly; the chart may lag up to CALENDAR_CACHE_TIMEOUT seconds.
+    chart_cache = caches["lookups"]
+    chart_key = build_chart_cache_key(today)
+    chart_data = chart_cache.get(chart_key)
 
-    # College breakdown: unique students who attended today
+    if chart_data is None:
+        week_start = today - timedelta(days=6)
+        week_rows = (
+            Attendance.objects.filter(timestamp__date__range=[week_start, today])
+            .values("timestamp__date", "status")
+            .annotate(count=Count("id"))
+        )
+        week_counts = {
+            (row["timestamp__date"], row["status"]): row["count"] for row in week_rows
+        }
+        week_labels = []
+        week_check_in = []
+        week_check_out = []
+        for offset in range(6, -1, -1):
+            day = today - timedelta(days=offset)
+            week_labels.append(day.strftime("%a"))
+            week_check_in.append(week_counts.get((day, "IN"), 0))
+            week_check_out.append(week_counts.get((day, "OUT"), 0))
+
+        chart_data = {
+            "week_labels": week_labels,
+            "week_check_in": week_check_in,
+            "week_check_out": week_check_out,
+            "college_labels": [],
+            "college_counts": [],
+        }
+        chart_cache.set(chart_key, chart_data, timeout=CALENDAR_CACHE_TIMEOUT)
+
+    # College breakdown: unique students who attended today (merged into the
+    # cached chart payload; it depends on today's scans, so always fresh).
     college_rows = list(
         scanned_records.values("student__college__code")
         .annotate(count=Count("student_id", distinct=True))
@@ -237,8 +326,7 @@ def dashboard_home(request):
         # Fallback so chart still reflects roster composition
         college_rows = list(
             students.values("college__code")
-            .annotate(count=Count("id"))
-            .order_by("-count")[:8]
+            .annotate(count=Count("id"), ).order_by("-count")[:8]
         )
         college_labels = [row["college__code"] or "Unknown" for row in college_rows]
         college_counts = [row["count"] for row in college_rows]
@@ -246,13 +334,8 @@ def dashboard_home(request):
         college_labels = [row["student__college__code"] or "Unknown" for row in college_rows]
         college_counts = [row["count"] for row in college_rows]
 
-    chart_data = {
-        "week_labels": week_labels,
-        "week_check_in": week_check_in,
-        "week_check_out": week_check_out,
-        "college_labels": college_labels,
-        "college_counts": college_counts,
-    }
+    chart_data["college_labels"] = college_labels
+    chart_data["college_counts"] = college_counts
 
     calendar_data, current_event = build_calendar_data(today)
 
@@ -262,29 +345,43 @@ def dashboard_home(request):
         "not_scanned": not_scanned,
         "present_in": present_in,
         "present_out": present_out,
-        "chart_data_json": json.dumps(chart_data),
-        "calendar_data_json": json.dumps(calendar_data),
+        # Raw objects: templates embed them with |json_script (do NOT
+        # pre-serialize with json.dumps or JS would parse a string, not object).
+        "chart_data": chart_data,
+        "calendar_data": calendar_data,
         "current_event": current_event,
     })
 
+
+@ratelimit(key=client_username, rate='60/m', block=True)
 @staff_member_required
 def admin_dashboard(request):
-    from .models import College
-    
-    # Date and Time Filters
+    # ---------- active section (server-rendered tab) ----------
+    # Sidebar deep links (Students / Reports / Approve Users) hit
+    # /qrapp/admin_dashboard/?section=... so the correct tab renders even
+    # without JS; previously hash-only switching left users on the overview.
+    valid_sections = {"dashboard", "students", "reports", "approve"}
+    section = (request.GET.get("section") or "dashboard").strip().lower()
+    if section not in valid_sections:
+        section = "dashboard"
+    section_labels = {
+        "dashboard": "Dashboard",
+        "students": "Students",
+        "reports": "Reports",
+        "approve": "Approve Users",
+    }
+
+    # ---------- filters ----------
     date_filter = request.GET.get("date")
     start_date_filter = request.GET.get("start_date")
     end_date_filter = request.GET.get("end_date")
     start_time_filter = request.GET.get("start_time")
     end_time_filter = request.GET.get("end_time")
-
-    # Get the original filters that were missing
     year_filter = request.GET.get("year")
     program_filter = request.GET.get("program")
     college_filter = request.GET.get("college")
     search_query = request.GET.get("search")
 
-    # Default to today if no date specified
     if date_filter:
         try:
             selected_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
@@ -293,8 +390,17 @@ def admin_dashboard(request):
     else:
         selected_date = date.today()
 
-    # Filter students
-    students = Student.objects.all()
+    # ---------- students queryset (optimized) ----------
+    students = (
+        Student.objects
+        .select_related("program", "college", "major")
+        .only(
+            "id", "name", "student_id", "year", "sex",
+            "major_id", "major__code", "major__name",
+            "program__code", "program__name",
+            "college__code",
+        )
+    )
     if year_filter:
         students = students.filter(year=year_filter)
     if program_filter:
@@ -303,20 +409,22 @@ def admin_dashboard(request):
         students = students.filter(college__code=college_filter)
     if search_query:
         students = students.filter(
-            Q(name__icontains=search_query) |
-            Q(student_id__icontains=search_query) |
-            Q(program__code__icontains=search_query) |
-            Q(year__icontains=search_query)
+            Q(name__icontains=search_query)
+            | Q(student_id__icontains=search_query)
+            | Q(program__code__icontains=search_query)
+            | Q(year__icontains=search_query)
         )
+    students = students.order_by("name")
 
-    # Attendance filtering with date range and time
-    scanned_records = Attendance.objects.all()
+    # ---------- attendance queryset (optimized) ----------
+    scanned_records = (
+        Attendance.objects
+        .select_related("student", "student__program", "student__college")
+    )
 
-    # Single date filter
     if date_filter:
         scanned_records = scanned_records.filter(timestamp__date=selected_date)
 
-    # Date range filter
     if start_date_filter and end_date_filter:
         try:
             start_date = datetime.strptime(start_date_filter, "%Y-%m-%d").date()
@@ -326,12 +434,10 @@ def admin_dashboard(request):
             )
         except ValueError:
             pass
-
-    # Default to selected day (today) for event view when no date filters set
-    if not date_filter and not (start_date_filter and end_date_filter):
+    elif not date_filter:
+        # Default to today
         scanned_records = scanned_records.filter(timestamp__date=selected_date)
 
-    # Time filtering (applies on single-day event window)
     if start_time_filter and not (start_date_filter and end_date_filter):
         try:
             start_datetime = datetime.combine(
@@ -350,7 +456,6 @@ def admin_dashboard(request):
         except ValueError:
             pass
 
-    # Apply year and course filters to attendance records
     if year_filter:
         scanned_records = scanned_records.filter(student__year=year_filter)
     if program_filter:
@@ -358,58 +463,29 @@ def admin_dashboard(request):
     if college_filter:
         scanned_records = scanned_records.filter(student__college__code=college_filter)
 
-    # IN and OUT
     present_in = scanned_records.filter(status="IN")
     present_out = scanned_records.filter(status="OUT")
 
-    # Students who have NOT scanned for the selected event window
-    event_scanned_students = scanned_records.values_list("student__id", flat=True).distinct()
-    not_scanned = students.exclude(id__in=event_scanned_students)
+    # IDs of students who scanned in this window — one query
+    scanned_student_ids = set(
+        scanned_records.values_list("student_id", flat=True).distinct()
+    )
+    not_scanned = students.exclude(id__in=scanned_student_ids)
 
-    # Get unique courses and colleges from database and student records
-    unique_programs = Student.objects.values_list("program__code", flat=True).distinct().order_by("program__code")
-    
-    # Get colleges from College model (active ones)
-    active_colleges = College.objects.filter(is_active=True).order_by('code')
-    unique_colleges = [college.code for college in active_colleges]
-    
-    # Also add any colleges from existing students that might not be in College table
-    student_colleges = Student.objects.values_list("college__code", flat=True).distinct()
-    for college in student_colleges:
-        if college and college not in unique_colleges:
-            unique_colleges.append(college)
-    unique_colleges = sorted(unique_colleges)
-    
-    # Build college-program mapping from Program model
-    from .models import Program
-    college_programs = {}
-    for college in active_colleges:
-        programs = Program.objects.filter(college=college, is_active=True).order_by('code')
-        college_programs[college.code] = [{'code': p.code, 'name': p.name} for p in programs]
-    
-    # Convert to JSON for JavaScript
-    import json
-    college_programs_json = json.dumps(college_programs)
+    # ---------- ONE query for all attendance grouped by student ----------
+    # Build a dict: student_id -> {"in": dt, "out": dt}
+    attendance_map = {}
+    for row in (
+        scanned_records
+        .values("student_id", "status", "timestamp")
+        .order_by("student_id", "timestamp")
+    ):
+        entry = attendance_map.setdefault(row["student_id"], {"in": None, "out": None})
+        if row["status"] == "IN" and entry["in"] is None:
+            entry["in"] = row["timestamp"]
+        elif row["status"] == "OUT":
+            entry["out"] = row["timestamp"]
 
-    student_programs_by_college = {}
-    for college_code, program_code in Student.objects.values_list("college__code", "program__code").distinct():
-        if not college_code:
-            continue
-        student_programs_by_college.setdefault(college_code, [])
-        if program_code and program_code not in student_programs_by_college[college_code]:
-            student_programs_by_college[college_code].append(program_code)
-    for college_code in student_programs_by_college:
-        student_programs_by_college[college_code].sort()
-    student_programs_by_college_json = json.dumps(student_programs_by_college)
-    
-    # Get pending users for approval tab
-    from django.contrib.auth.models import User
-    pending_users = User.objects.filter(is_active=False)
-    all_users = User.objects.all().order_by('-date_joined')
-    total_users = User.objects.count()
-    active_users = User.objects.filter(is_active=True).count()
-
-    # Helper: make datetime timezone-aware/local
     def to_local(dt):
         if not dt:
             return None
@@ -418,28 +494,19 @@ def admin_dashboard(request):
         except Exception:
             return dt
 
-    # Build report data with filtered records
+    # Build report data — no DB hit in this loop
     student_report_data = []
     for student in students:
-        student_attendance = scanned_records.filter(student=student).order_by("timestamp")
+        entry = attendance_map.get(student.id, {"in": None, "out": None})
+        time_in = entry["in"]
+        time_out = entry["out"]
+        if time_in and time_out:
+            status = "COMPLETED"
+        elif time_in:
+            status = "IN"
+        else:
+            status = "ABSENT"
 
-        time_in = None
-        time_out = None
-        status = "ABSENT"
-
-        if student_attendance.exists():
-            for record in student_attendance:
-                if record.status == "IN" and time_in is None:
-                    time_in = record.timestamp
-                elif record.status == "OUT":
-                    time_out = record.timestamp
-
-            if time_in and time_out:
-                status = "COMPLETED"
-            elif time_in:
-                status = "IN"
-
-        # Localize times
         time_in_local = to_local(time_in)
         time_out_local = to_local(time_out)
         date_obj = time_out_local or time_in_local
@@ -449,9 +516,10 @@ def admin_dashboard(request):
             "time_in": time_in_local,
             "time_out": time_out_local,
             "date": date_obj,
-            "status": status
+            "status": status,
         })
 
+    # ---------- analytics (unchanged call, but now cheap) ----------
     analytics = build_event_analytics(students, scanned_records, student_report_data)
 
     event_label = selected_date.strftime("%b %d, %Y")
@@ -462,7 +530,80 @@ def admin_dashboard(request):
 
     calendar_data, current_event = build_calendar_data(date.today())
 
+    # ---------- dropdown data: 3 queries total, no loops ----------
+    active_colleges = list(College.objects.filter(is_active=True).order_by("code"))
+    college_codes = [c.code for c in active_colleges]
+
+    # All active programs in one query, grouped in Python
+    all_programs = (
+        Program.objects
+        .filter(is_active=True, college__is_active=True)
+        .select_related("college")
+        .order_by("college__code", "code")
+    )
+    college_programs = {}
+    for p in all_programs:
+        college_programs.setdefault(p.college.code, []).append({
+            "code": p.code,
+            "name": p.name,
+        })
+
+    # Student program/college distinct pairs in one query
+    student_pairs = (
+        Student.objects
+        .exclude(college__code__isnull=True)
+        .exclude(program__code__isnull=True)
+        .values_list("college__code", "program__code")
+        .distinct()
+    )
+    student_programs_by_college = {}
+    extra_colleges = set()
+    for college_code, program_code in student_pairs:
+        extra_colleges.add(college_code)
+        lst = student_programs_by_college.setdefault(college_code, [])
+        if program_code and program_code not in lst:
+            lst.append(program_code)
+    for k in student_programs_by_college:
+        student_programs_by_college[k].sort()
+
+    unique_colleges = sorted(set(college_codes) | extra_colleges)
+    unique_programs = list(
+        Program.objects.values_list("code", flat=True).distinct().order_by("code")
+    )
+
+    # Events for the export-report dropdown (newest first)
+    all_events = list(
+        Event.objects.all()
+        .order_by("-is_current", "-event_date", "-start_time", "title")
+        .values("id", "title", "event_date", "is_current")
+    )
+
+    # ---------- users: 3 queries max ----------
+    pending_users = list(User.objects.filter(is_active=False))
+    all_users = list(User.objects.all().order_by("-date_joined"))
+    total_users = len(all_users)
+    active_users = sum(1 for u in all_users if u.is_active)
+
+    app_urls = {
+        "manageUsers": reverse("manage_users"),
+        "addStudent": reverse("add_student"),
+        "uploadPdf": reverse("upload_pdf"),
+        "ajaxQrCodes": reverse("ajax_qr_codes"),
+        "exportQrCodes": reverse("export_qr_codes"),
+        "exportAttendance": reverse("export_attendance"),
+        "exportStudents": reverse("export_students"),
+        "editStudent": reverse("edit_student", args=[0]),
+        "deleteStudent": reverse("delete_student", args=[0]),
+        "getMajors": reverse("get_majors_json", args=["TEMPLATE"]),
+        "scansSince": reverse("scans_since"),
+        "ajaxStudentList": reverse("ajax_student_list"),
+        "ajaxDashboardData": reverse("ajax_dashboard_data"),
+        "ajaxReportsData": reverse("ajax_reports_data"),
+        "csrfToken": get_token(request),
+    }
+
     return render(request, "qrapp/admin_dashboard.html", {
+        "app_urls": app_urls,
         "today": date.today(),
         "selected_date": selected_date,
         "event_label": event_label,
@@ -482,27 +623,36 @@ def admin_dashboard(request):
         "unique_programs": unique_programs,
         "unique_colleges": unique_colleges,
         "student_report_data": student_report_data,
-        "college_programs_json": college_programs_json,
-        "student_programs_by_college_json": student_programs_by_college_json,
+        "college_programs": college_programs,
+        "student_programs_by_college": student_programs_by_college,
+        "all_events": all_events,
         "pending_users": pending_users,
         "all_users": all_users,
         "total_users": total_users,
         "active_users": active_users,
         "analytics": analytics,
-        "calendar_data_json": json.dumps(calendar_data),
+        "calendar_data": calendar_data,
         "current_event": current_event,
+        "active_section": section,
+        "section_label": section_labels[section],
+        "import_issue_count": _import_issue_count(),
     })
-
 
 # ---------------- SCANNER ----------------
 @login_required
 def scanner_view(request):
     events = Event.objects.filter(is_active=True).order_by("-is_current", "-event_date", "title")
     current_event = events.filter(is_current=True).first() or events.filter(event_date=date.today()).first()
+    scanner_config = {
+        "scan_url": reverse("save_scan"),
+        "csrfToken": get_token(request),
+    }
     return render(request, "qrapp/scanner.html", {
         "events": events,
         "current_event": current_event,
+        "scanner_config": scanner_config,
     })
+
 
 # ---------------- data security ----------------
 
@@ -511,17 +661,16 @@ def get_students_data(request):
     user = request.user
 
     if user.is_staff or user.is_superuser:
-        # staff sees full dataset
-        students = Student.objects.all()
         student_data = [
             {
                 "id": s.id,
-                
+
                 "student_id": s.student_id,
                 "name": s.name,
+                "college": s.college_code,
                 "program": s.program_code,
                 "year": s.year,
-                "major": s.major,
+                "major": s.major_name,
                 # add other fields if needed
             }
             for s in students
@@ -538,14 +687,17 @@ def get_students_data(request):
         "id": student.id,
         "student_id": student.student_id,
         "name": student.name,
+        "college": student.college_code,
         "program": student.program_code,
         "year": student.year,
-        "major": student.major,
+        "major": student.major_name,
     }
     return JsonResponse({"success": True, "data": data})
 
 
-
+# Scan endpoint: generous enough for a queue of students (1 scan / 2s per
+# scanner), tight enough to stop scripted flooding of the attendance table.
+@ratelimit(key=client_username, rate='30/m', method='POST', block=True)
 @login_required
 def save_scan(request):
     if request.method != "POST":
@@ -597,6 +749,22 @@ def save_scan(request):
             "message": "Selected event was not found or is inactive.",
             "color": "warning",
         })
+
+    # Scanning is only allowed on the event's own day. Checked against the
+    # server's real date (not the device-supplied local_time) so a wrong or
+    # doctored phone clock cannot backfill attendance for other days.
+    server_today = datetime.now().date()
+    if event.event_date != server_today:
+        return JsonResponse({
+            "success": False,
+            "message": (
+                f"Event is not today. {event.title} is scheduled for "
+                f"{event.event_date.strftime('%b %d, %Y')} — scanning is only "
+                "allowed on the event day."
+            ),
+            "color": "warning",
+        })
+
     if not event_label:
         event_label = event.title
 
@@ -691,37 +859,77 @@ def save_scan(request):
     })
 
 
+@ratelimit(key=client_username, rate='60/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def edit_student(request, student_id):
     from .models import College
-    from .college_program import resolve_college_and_program
+    from .college_program import resolve_college_and_program, resolve_major
 
     student = get_object_or_404(Student, id=student_id)
     if request.method == "POST":
         # Check if it's an AJAX request
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.POST.get('name'):
             try:
+                from .college_program import resolve_college_and_program, resolve_program_and_major
+                # Student ID is editable (fixes registrar-file mistakes like
+                # generated "-DUP2" numbers). Validate before touching anything.
+                new_student_id = (request.POST.get("student_id") or student.student_id).strip()
+                if not new_student_id:
+                    raise ValueError("Student ID is required.")
+                if len(new_student_id) > 20:
+                    raise ValueError("Student ID must be 20 characters or fewer.")
+                if new_student_id != student.student_id:
+                    clash = Student.objects.filter(student_id__iexact=new_student_id).first()
+                    if clash is not None:
+                        raise ValueError(
+                            f"Student ID {new_student_id} is already used by "
+                            f"{clash.name}. Choose a different number."
+                        )
+
                 college, program = resolve_college_and_program(
                     request.POST.get("college"),
                     request.POST.get("program"),
                 )
+                # A major value naming a program (e.g. "Animal Science")
+                # resolves to that program with no major, never a major.
+                program, major = resolve_program_and_major(
+                    college, program, request.POST.get("major"), create=True,
+                )
+                # Program code is authoritative; keep college consistent.
+                if program is not None:
+                    college = program.college
+
+                id_changed = new_student_id != student.student_id
+                old_student_id = student.student_id
+                student.student_id = new_student_id
                 student.name = request.POST.get("name")
                 student.sex = request.POST.get("sex")
                 student.college = college
                 student.program = program
                 student.year = request.POST.get("year")
-                student.major = request.POST.get("major")
+                student.major = major
                 student.save()
+
+                if id_changed:
+                    # The old number no longer exists -- drop stale review
+                    # entries (e.g. a "-DUP2" shared-number flag that this
+                    # rename just fixed) so the issues list stays accurate.
+                    # QR codes are generated on demand (no stored files), and
+                    # tokens are signed from the ID, so reprints of this
+                    # student will automatically use the new number.
+                    from .models import ImportIssue
+                    ImportIssue.objects.filter(student_id__iexact=old_student_id).delete()
 
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return JsonResponse({'success': True, 'message': 'Student updated successfully!'})
-                return redirect("admin_dashboard")
+                # Back to the Students tab so the section is preserved.
+                return redirect(f"{reverse('admin_dashboard')}?section=students")
             except Exception as e:
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return JsonResponse({'success': False, 'error': str(e)}, status=400)
                 messages.error(request, f'Error updating student: {str(e)}')
         else:
-            return redirect("admin_dashboard")
+            return redirect(f"{reverse('admin_dashboard')}?section=students")
 
     active_colleges = College.objects.filter(is_active=True).order_by('code')
     college_choices = [(college.code, f"{college.code} - {college.name}") for college in active_colleges]
@@ -732,6 +940,7 @@ def edit_student(request, student_id):
     })
 
 
+@ratelimit(key=client_username, rate='30/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def delete_student(request, student_id):
     student = get_object_or_404(Student, id=student_id)
@@ -743,13 +952,14 @@ def delete_student(request, student_id):
         if request.user.check_password(password):
             student.delete()
             messages.success(request, f'Student {student.name} has been deleted successfully.')
-            return redirect("admin_dashboard")
+            return redirect(f"{reverse('admin_dashboard')}?section=students")
         else:
             messages.error(request, 'Incorrect password. Please try again.')
 
     return render(request, "qrapp/delete_student.html", {"student": student})
 
 
+@ratelimit(key=client_username, rate='60/m', block=True)
 @staff_member_required
 def ajax_student_list(request):
     """AJAX view to return filtered student list"""
@@ -823,29 +1033,37 @@ def ajax_student_list(request):
                 students = students.filter(id__in=present_out.values_list('student__id', flat=True))
 
         # Prepare student data for JSON response
+        # ONE query for today's attendance grouped by student (avoids the
+        # per-student exists()+iteration N+1 = 2-3 queries per row)
+        today_map = {}
+        for row in (
+            Attendance.objects
+            .filter(timestamp__date=today)
+            .order_by("student_id", "timestamp")
+            .values("student_id", "status", "timestamp")
+        ):
+            entry = today_map.setdefault(row["student_id"], {"in": None, "out": None})
+            if row["status"] == "IN" and entry["in"] is None:
+                entry["in"] = row["timestamp"]
+            elif row["status"] == "OUT" and entry["out"] is None:
+                entry["out"] = row["timestamp"]
+
+        students = (
+            students.select_related("college", "program", "major")
+        )
+
         student_data = []
         for student in students:
-            # Get today's attendance for this student
-            today_attendance = Attendance.objects.filter(
-                student=student,
-                timestamp__date=today
-            ).order_by("timestamp")
+            entry = today_map.get(student.id)
+            time_in = entry["in"] if entry else None
+            time_out = entry["out"] if entry else None
 
-            time_in = None
-            time_out = None
-            status = "ABSENT"
-
-            if today_attendance.exists():
-                for record in today_attendance:
-                    if record.status == "IN" and time_in is None:
-                        time_in = record.timestamp
-                    elif record.status == "OUT":
-                        time_out = record.timestamp
-
-                if time_in and time_out:
-                    status = "COMPLETED"
-                elif time_in:
-                    status = "IN"
+            if time_in and time_out:
+                status = "COMPLETED"
+            elif time_in:
+                status = "IN"
+            else:
+                status = "ABSENT"
 
             student_data.append({
                 'id': student.id,
@@ -854,8 +1072,8 @@ def ajax_student_list(request):
                 'college': student.college_code,
                 'program': student.program_code,
                 'year': student.year,
-                'major': student.major,
-                'time_in': time_in.strftime("%I:%M:%S %p")if time_in else None,
+                'major': student.major_name,
+                'time_in': time_in.strftime("%I:%M:%S %p") if time_in else None,
                 'time_out': time_out.strftime("%H:%M:%S") if time_out else None,
                 'status': status
             })
@@ -873,6 +1091,7 @@ def ajax_student_list(request):
         })
 
 
+@ratelimit(key=client_username, rate='60/m', block=True)
 @staff_member_required
 def ajax_dashboard_data(request):
     try:
@@ -981,7 +1200,7 @@ def ajax_dashboard_data(request):
                 'college': record.student.college_code,
                 'program': record.student.program_code,
                 'year': record.student.year,
-                'major': record.student.major,
+                'major': record.student.major_name,
                 'status': record.status,
                 'date': record.timestamp.strftime("%Y-%m-%d"),
                 'timestamp': record.timestamp.strftime("%I:%M:%S %p")
@@ -1030,6 +1249,8 @@ def ajax_dashboard_data(request):
             'error': str(e)
         })
 
+
+@ratelimit(key=client_username, rate='60/m', block=True)
 @staff_member_required
 def ajax_reports_data(request):
     """AJAX view to return filtered reports data"""
@@ -1130,29 +1351,37 @@ def ajax_reports_data(request):
             attendance_records = attendance_records.filter(student__college__code=college_filter)
 
         # Prepare report data for JSON response
+        # ONE query for the window's attendance grouped by student (avoids the
+        # per-student exists()+filter N+1 = ~5 queries per row)
+        attendance_map = {}
+        for row in (
+            attendance_records
+            .order_by("student_id", "timestamp")
+            .values("student_id", "status", "timestamp")
+        ):
+            entry = attendance_map.setdefault(row["student_id"], {"in": None, "out": None})
+            if row["status"] == "IN" and entry["in"] is None:
+                entry["in"] = row["timestamp"]
+            elif row["status"] == "OUT" and entry["out"] is None:
+                entry["out"] = row["timestamp"]
+
+        students = students.select_related("college", "program", "major")
+
         report_data = []
         for student in students:
-            # Get filtered attendance for this student
-            student_attendance = attendance_records.filter(student=student).order_by("timestamp")
+            entry = attendance_map.get(student.id)
+            time_in = entry["in"] if entry else None
+            time_out = entry["out"] if entry else None
 
-            time_in = None
-            time_out = None
             status = "ABSENT"
             attendance_date = None
 
-            if student_attendance.exists():
-                for record in student_attendance:
-                    if record.status == "IN" and time_in is None:
-                        time_in = record.timestamp
-                    elif record.status == "OUT":
-                        time_out = record.timestamp
-
-                if time_in and time_out:
-                    status = "COMPLETED"
-                    attendance_date = time_out.date()
-                elif time_in:
-                    status = "IN"
-                    attendance_date = time_in.date()
+            if time_in and time_out:
+                status = "COMPLETED"
+                attendance_date = time_out.date()
+            elif time_in:
+                status = "IN"
+                attendance_date = time_in.date()
 
             # Apply status filter if specified
             if status_filter:
@@ -1171,7 +1400,7 @@ def ajax_reports_data(request):
                 'college': student.college_code,
                 'program': student.program_code,
                 'year': student.year,
-                'major': student.major,
+                'major': student.major_name,
                 'time_in': time_in.strftime("%I:%M:%S %p") if time_in else None,
                 'time_out': time_out.strftime("%I:%M:%S %p") if time_out else None,
                 'date': attendance_date.strftime("%Y-%m-%d") if attendance_date else None,
@@ -1203,28 +1432,46 @@ def ajax_reports_data(request):
             'error': str(e)
         })
 
+
 # ---------------- AUTH ----------------
+@ratelimit(key='ip', rate='10/h', method='POST', block=True)
+@ratelimit(key='ip', rate='3/m', method='POST', block=True)
 def register_view(request):
     if request.method == "POST":
-        username = request.POST.get("username")
-        password = request.POST.get("password")
-        email = request.POST.get("email")
+        username = (request.POST.get("username") or "").strip()
+        email = (request.POST.get("email") or "").strip()
+        password = request.POST.get("password") or ""
+        password2 = request.POST.get("password2") or ""
 
-        if User.objects.filter(username=username).exists():
+        if not username:
+            messages.error(request, "Please choose a username.")
+        elif User.objects.filter(username__iexact=username).exists():
             messages.error(request, "Username already taken")
+        elif len(password) < 8:
+            messages.error(request, "Password must be at least 8 characters.")
+        elif password != password2:
+            messages.error(request, "Passwords do not match.")
         else:
-            user = User.objects.create_user(
+            User.objects.create_user(
                 username=username,
                 password=password,
                 email=email,
                 is_active=False  # 🔒 must be approved by admin
             )
-            messages.success(request, "Account created! Please wait for admin approval.")
+            messages.success(
+                request,
+                "Registration successful! Please wait for an administrator "
+                "to approve your account before logging in."
+            )
             return redirect("login")
 
-    return render(request, "qrapp/register.html")
+    return render(request, "qrapp/register.html", {
+        "username_value": (request.POST.get("username") or "").strip() if request.method == "POST" else "",
+        "email_value": (request.POST.get("email") or "").strip() if request.method == "POST" else "",
+    })
 
 
+@ratelimit(key=client_username, rate='60/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def approve_users(request):
     pending_users = User.objects.filter(is_active=False)
@@ -1247,7 +1494,9 @@ def approve_users(request):
     })
 
 
-
+# Brute-force protection: strict per-IP burst + hourly caps on login POSTs.
+@ratelimit(key='ip', rate='30/h', method='POST', block=True)
+@ratelimit(key='ip', rate='5/m', method='POST', block=True)
 def login_view(request):
     if request.method == "POST":
         username = request.POST.get("username")
@@ -1261,7 +1510,19 @@ def login_view(request):
             else:
                 return redirect('scanner')
         else:
-            messages.error(request, "Invalid username or password")
+            # authenticate() returns None for is_active=False accounts, which
+            # made every pending registration look like a wrong password.
+            # Tell "not approved yet" apart from bad credentials.
+            if username and User.objects.filter(
+                username__iexact=username.strip(), is_active=False
+            ).exists():
+                messages.warning(
+                    request,
+                    "Your account has not been approved yet. Please wait for "
+                    "an administrator to approve it, then try logging in again."
+                )
+            else:
+                messages.error(request, "Invalid username or password")
     return render(request, "qrapp/login.html")
 
 
@@ -1272,6 +1533,7 @@ def logout_view(request):
 
 # ---------------- QR CODE GENERATION ----------------
 
+@ratelimit(key=client_username, rate='10/m', block=True)
 @staff_member_required
 def download_qr_pdf(request):
     response, error = export_qr_response({**request.GET, "format": "pdf"})
@@ -1280,22 +1542,44 @@ def download_qr_pdf(request):
     return response
 
 
+# Preview batches are small and user-driven (modal pagination + retries),
+# so allow more per minute than the bulk exports.
+@ratelimit(key=client_username, rate='60/m', block=True)
 @staff_member_required
 def ajax_qr_codes(request):
     if request.headers.get("x-requested-with") != "XMLHttpRequest":
         return JsonResponse({"success": False, "error": "Invalid request"}, status=400)
 
     students = get_filtered_students(request.GET)
+    total_count = students.count()
+
+    # Optional pagination: ?page=N&page_size=M streams the modal in batches
+    # instead of encoding the whole roster (often thousands of base64 PNGs)
+    # in one slow response. No page param => legacy full-list behavior.
+    page = request.GET.get("page")
+    page_size = request.GET.get("page_size")
+    if page or page_size:
+        try:
+            page = max(int(page or 1), 1)
+            page_size = min(max(int(page_size or 50), 1), 200)
+        except ValueError:
+            page, page_size = 1, 50
+        students = students[(page - 1) * page_size : page * page_size]
+
     qr_list = serialize_qr_list(students)
     return JsonResponse(
         {
             "success": True,
             "count": len(qr_list),
             "qr_list": qr_list,
+            "total_count": total_count,
+            "page": page if page or page_size else None,
         }
     )
 
 
+# PDF/ZIP generation for the whole roster is CPU-bound: cap it.
+@ratelimit(key=client_username, rate='10/m', block=True)
 @staff_member_required
 def export_qr_codes(request):
     response, error = export_qr_response(request.GET)
@@ -1312,6 +1596,8 @@ def safe_strip(value, default="NA"):
     return value_str if value_str else default
 
 
+# Bulk import is expensive: cap how often it can run.
+@ratelimit(key=client_username, rate='20/h', method='POST', block=True)
 @staff_member_required
 def upload_pdf(request):
     """Import students from PDF, CSV, or Excel upload."""
@@ -1346,7 +1632,12 @@ def upload_pdf(request):
                 for chunk in upload_file.chunks():
                     destination.write(chunk)
 
-            result = import_students_from_file(temp_path)
+            allow_generated_ids = request.POST.get('allow_generated_ids') in ('on', 'true', '1', 'yes')
+            result = import_students_from_file(
+                temp_path,
+                allow_generated_ids=allow_generated_ids,
+                source_file=upload_file.name,
+            )
             success_message = result['message']
 
             if is_ajax:
@@ -1370,6 +1661,7 @@ def upload_pdf(request):
     return render(request, 'qrapp/upload_pdf.html', {'form': StudentUploadForm()})
 
 
+@ratelimit(key=client_username, rate='10/m', block=True)
 @staff_member_required
 def export_students(request):
     """Export filtered student roster as CSV or Excel."""
@@ -1379,28 +1671,51 @@ def export_students(request):
     return response
 
 
+# Attendance report export is DB-bound over the whole roster: cap it.
+@ratelimit(key=client_username, rate='10/m', block=True)
+@staff_member_required
+def export_attendance(request):
+    """Export the per-student attendance report (CSV/Excel) with filters."""
+    response, error = export_attendance_response(request.GET)
+    if error:
+        return HttpResponse(error, status=404)
+    return response
+
+
 # ---------------- OTHER ----------------
-def home(request):
-    return redirect('generate_all_qr')
-
-
+# Destructive: wipes the roster. Tight cap on POSTs only.
+@ratelimit(key=client_username, rate='5/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def delete_all_qr(request):
-    student_count = Student.objects.count()
+    students = list(Student.objects.only("student_id", "name"))
+    student_count = len(students)
+
+    # Remove each student's QR image while the records still exist to build
+    # the filename from (current and legacy suffixes), then delete the roster.
+    for student in students:
+        base = qr_image_basename(student)
+        for suffix in (".png", "_label.png", "_qr.png"):
+            path = os.path.join(settings.MEDIA_ROOT, base + suffix)
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
     Student.objects.all().delete()
 
-    # Remove QR code images
-    qr_files = glob.glob(os.path.join(settings.MEDIA_ROOT, "*_label.png"))
-    for f in qr_files:
-        try:
-            os.remove(f)
-        except:
-            pass
+    # Sweep images left over from the old "{id}_{lastname}_label/_qr" naming.
+    for pattern in ("*_label.png", "*_qr.png"):
+        for f in glob.glob(os.path.join(settings.MEDIA_ROOT, pattern)):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
 
     messages.success(request, f"Deleted {student_count} students and their QR codes!")
     return redirect('generate_all_qr')
 
 
+@ratelimit(key=client_username, rate='60/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def add_student(request):
     if request.method == 'POST':
@@ -1408,11 +1723,19 @@ def add_student(request):
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.POST.get('student_id'):
             # Handle AJAX request
             try:
-                from .college_program import resolve_college_and_program
+                from .college_program import resolve_college_and_program, resolve_program_and_major
                 college, program = resolve_college_and_program(
                     request.POST.get('college'),
                     request.POST.get('program'),
                 )
+                # A major value naming a program (e.g. "Animal Science")
+                # resolves to that program with no major, never a major.
+                program, major = resolve_program_and_major(
+                    college, program, request.POST.get('major'), create=True,
+                )
+                # Program code is authoritative; keep college consistent.
+                if program is not None:
+                    college = program.college
                 student = Student(
                     student_id=request.POST.get('student_id'),
                     name=request.POST.get('name'),
@@ -1420,7 +1743,7 @@ def add_student(request):
                     college=college,
                     program=program,
                     year=request.POST.get('year'),
-                    major=request.POST.get('major')
+                    major=major
                 )
                 student.save()
                 return JsonResponse({'success': True, 'message': 'Student added successfully!'})
@@ -1439,9 +1762,13 @@ def add_student(request):
         form = StudentForm()
     return render(request, 'qrapp/add_student.html', {'form': form})
 
+
+# Renders a QR preview for every student: heavy page, keep it capped.
+@ratelimit(key=client_username, rate='10/m', block=True)
 @staff_member_required
 def generate_all_qr(request):
-    students = Student.objects.all()
+    # select_related avoids ~3 queries per student while serializing previews.
+    students = Student.objects.select_related("college", "program", "major").all()
     student_map = {student.student_id: student for student in students}
     qr_list = []
     for item in serialize_qr_list(students):
@@ -1452,27 +1779,112 @@ def generate_all_qr(request):
     return render(request, "qrapp/all_qr.html", {
         "qr_list": qr_list,
         "student_count": len(qr_list),
+        "import_issue_count": _import_issue_count(),
     })
 
 
+# ---------------- IMPORT ISSUES ----------------
+def _import_issue_count():
+    """Badge count for the Students section buttons (one COUNT query)."""
+    return ImportIssue.objects.count()
+
+
+@ratelimit(key=client_username, rate='60/m', block=True)
+@staff_member_required
+def import_issues(request):
+    """Review the students a roster import could not store as printed.
+
+    Backs the "Import Issues" button in the Students section: rows with no
+    student number, numbers printed for two different students, students
+    listed twice, unreadable rows, and students stored under a generated
+    number (see ``ImportIssue``).
+    """
+    issues = (
+        ImportIssue.objects
+        .select_related("program", "program__college")
+        .order_by("issue_type", "name", "student_id")
+    )
+    counts = {
+        row["issue_type"]: row["total"]
+        for row in ImportIssue.objects.values("issue_type").annotate(total=Count("id"))
+    }
+    # Per-college export buttons: colleges that actually have issues.
+    colleges_with_issues = (
+        ImportIssue.objects
+        .exclude(program__college__code="")
+        .values("program__college__code", "program__college__name")
+        .annotate(total=Count("id"))
+        .order_by("program__college__code")
+    )
+    return render(request, "qrapp/import_issues.html", {
+        "issues": issues,
+        "issue_counts": counts,
+        "issue_choices": ImportIssue.ISSUE_CHOICES,
+        "colleges_with_issues": colleges_with_issues,
+        "total_issues": sum(counts.values()),
+        "now": timezone.now(),
+    })
+
+
+@ratelimit(key=client_username, rate='30/m', block=True)
+@staff_member_required
+def dismiss_import_issue(request, issue_id):
+    """Remove one reviewed issue from the list (e.g. the student was fixed)."""
+    issue = get_object_or_404(ImportIssue, pk=issue_id)
+    label = str(issue)
+    issue.delete()
+    messages.success(request, f"Dismissed: {label}")
+    return redirect("import_issues")
+
+
+@ratelimit(key=client_username, rate='30/m', block=True)
+@staff_member_required
+def export_import_issues_pdf(request):
+    """Download the import-issue review list as a labelled PDF.
+
+    One row per issue; a number the registrar printed for two different
+    students gets a row for both students. The student-number column shows
+    ``no_id`` for rows the file carried no number for.
+    """
+    from .import_issue_export import export_import_issues_pdf as build_pdf
+
+    college_code = (request.GET.get("college") or "").strip()
+    response, error = build_pdf(college_code)
+    if error:
+        messages.error(request, error)
+        return redirect("import_issues")
+    return response
+
+
+@ratelimit(key=client_username, rate='5/m', block=True)
+@staff_member_required
+def clear_import_issues(request):
+    """Empty the whole review list (the next import repopulates it)."""
+    removed = ImportIssue.objects.count()
+    ImportIssue.objects.all().delete()
+    messages.success(request, f"Cleared {removed} import issue(s).")
+    return redirect("import_issues")
 
 
 # ---------------- COLLEGE MANAGEMENT ----------------
+@ratelimit(key=client_username, rate='60/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def manage_colleges(request):
     """View to list and manage colleges"""
     from .models import College
     import json
-    
-    colleges = College.objects.all().order_by('code')
-    
+
+    colleges = College.objects.annotate(
+        student_count=Count('students', distinct=True)
+    ).order_by('code')
+
     if request.method == 'POST':
         action = request.POST.get('action')
-        
+
         if action == 'add':
             code = request.POST.get('code', '').strip().upper()
             name = request.POST.get('name', '').strip()
-            
+
             if code and name:
                 if not College.objects.filter(code=code).exists():
                     College.objects.create(code=code, name=name, is_active=True)
@@ -1481,13 +1893,13 @@ def manage_colleges(request):
                     messages.error(request, f'College code {code} already exists!')
             else:
                 messages.error(request, 'Both code and name are required!')
-                
+
         elif action == 'edit':
             college_id = request.POST.get('college_id')
             code = request.POST.get('code', '').strip().upper()
             name = request.POST.get('name', '').strip()
             is_active = request.POST.get('is_active') == 'on'
-            
+
             try:
                 college = College.objects.get(id=college_id)
                 # Check if code is being changed and if new code already exists
@@ -1501,7 +1913,7 @@ def manage_colleges(request):
                     messages.success(request, f'College {code} updated successfully!')
             except College.DoesNotExist:
                 messages.error(request, 'College not found!')
-                
+
         elif action == 'delete':
             college_id = request.POST.get('college_id')
             try:
@@ -1509,75 +1921,101 @@ def manage_colleges(request):
                 # Check if any students are using this college
                 student_count = Student.objects.filter(college=college).count()
                 if student_count > 0:
-                    messages.warning(request, f'Cannot delete {college.code}! {student_count} students are still enrolled in this college. Please reassign them first.')
+                    messages.warning(request,
+                                     f'Cannot delete {college.code}! {student_count} students are still enrolled in this college. Please reassign them first.')
                 else:
                     college.delete()
                     messages.success(request, f'College {college.code} deleted successfully!')
             except College.DoesNotExist:
                 messages.error(request, 'College not found!')
-        
+
+        # College changes feed lookup dropdowns: drop caches.
+        invalidate_lookup_caches()
         return redirect('manage_colleges')
-    
+
     # Get active colleges for the dropdown
     active_colleges = College.objects.filter(is_active=True).order_by('code')
-    
-    # Count students per college
-    college_stats = {}
-    for college in colleges:
-        college_stats[college.code] = Student.objects.filter(college=college).count()
-    
-    # Convert to JSON for JavaScript
-    college_stats_json = json.dumps(college_stats)
-    
+
+    # Count students per college. Built from the annotation above (single
+    # query, always present even for colleges with zero students) instead of
+    # a per-college Student.objects.filter(...).count() loop, which used to
+    # leave codes with no students out of the dict / stuck on "Loading...".
+    college_stats = {college.code: college.student_count for college in colleges}
+    total_students = sum(college_stats.values())
+
     return render(request, 'qrapp/manage_colleges.html', {
         'colleges': colleges,
         'active_colleges': active_colleges,
-        'college_stats': college_stats_json
+        'total_students': total_students,
+        # Raw object: template embeds it via |json_script
+        'college_stats': college_stats
     })
 
 
+@ratelimit(key=client_username, rate='120/m', block=True)
 @staff_member_required
 def get_colleges_json(request):
-    """AJAX endpoint to get colleges for dropdowns"""
+    """AJAX endpoint to get colleges for dropdowns (cached)."""
     from .models import College
-    
+
     active_only = request.GET.get('active_only', 'true').lower() == 'true'
-    
-    if active_only:
-        colleges = College.objects.filter(is_active=True).order_by('code')
-    else:
-        colleges = College.objects.all().order_by('code')
-    
-    college_list = [
-        {
-            'id': college.id,
-            'code': college.code,
-            'name': college.name,
-            'is_active': college.is_active
+
+    lookup_cache = caches["lookups"]
+    cache_key = build_lookups_cache_key("colleges", request.user.pk, f"active={active_only}")
+    payload = lookup_cache.get(cache_key)
+
+    if payload is None:
+        if active_only:
+            colleges = College.objects.filter(is_active=True).order_by('code')
+        else:
+            colleges = College.objects.all().order_by('code')
+
+        college_list = [
+            {
+                'id': college.id,
+                'code': college.code,
+                'name': college.name,
+                'is_active': college.is_active
+            }
+            for college in colleges
+        ]
+        payload = {
+            'success': True,
+            'colleges': college_list
         }
-        for college in colleges
-    ]
-    
-    return JsonResponse({
-        'success': True,
-        'colleges': college_list
-    })
+        lookup_cache.set(cache_key, payload, timeout=LOOKUPS_CACHE_TIMEOUT)
+
+    return JsonResponse(payload)
 
 
+@ratelimit(key=client_username, rate='120/m', block=True)
 @staff_member_required
 def get_programs_json(request, college_code):
-    """AJAX endpoint to get programs for a specific college"""
+    """AJAX endpoint to get programs for a specific college (cached)."""
     from .models import College, Program
-    
+
     try:
         college = College.objects.get(code=college_code)
-        active_only = request.GET.get('active_only', 'true').lower() == 'true'
-        
+    except College.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'College not found'
+        }, status=404)
+
+    active_only = request.GET.get('active_only', 'true').lower() == 'true'
+
+    lookup_cache = caches["lookups"]
+    cache_key = build_lookups_cache_key(
+        "programs", request.user.pk, f"college={college_code};active={active_only}"
+    )
+    payload = lookup_cache.get(cache_key)
+
+    if payload is None:
         if active_only:
             programs = Program.objects.filter(college=college, is_active=True).order_by('code')
         else:
             programs = Program.objects.filter(college=college).order_by('code')
-        
+
         program_list = [
             {
                 'id': program.id,
@@ -1587,33 +2025,30 @@ def get_programs_json(request, college_code):
             }
             for program in programs
         ]
-        
-        return JsonResponse({
+        payload = {
             'success': True,
             'programs': program_list
-        })
-    except College.DoesNotExist:
-        return JsonResponse({
-            'success': False,
-            'error': 'College not found'
-        }, status=404)
+        }
+        lookup_cache.set(cache_key, payload, timeout=LOOKUPS_CACHE_TIMEOUT)
+
+    return JsonResponse(payload)
 
 
+@ratelimit(key=client_username, rate='60/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def manage_programs(request, college_id):
-    """View to manage programs for a specific college"""
-    from .models import College, Program
-    
+    """View to manage programs (and their majors) for a specific college"""
+    from .models import College, Program, Major
+
     college = get_object_or_404(College, id=college_id)
-    programs = Program.objects.filter(college=college).order_by('code')
-    
+
     if request.method == 'POST':
         action = request.POST.get('action')
-        
+
         if action == 'add':
             code = request.POST.get('code', '').strip()
             name = request.POST.get('name', '').strip()
-            
+
             if code and name:
                 if not Program.objects.filter(college=college, code=code).exists():
                     Program.objects.create(college=college, code=code, name=name, is_active=True)
@@ -1622,13 +2057,13 @@ def manage_programs(request, college_id):
                     messages.error(request, f'Program code {code} already exists in {college.code}!')
             else:
                 messages.error(request, 'Both code and name are required!')
-                
+
         elif action == 'edit':
             program_id = request.POST.get('program_id')
             code = request.POST.get('code', '').strip()
             name = request.POST.get('name', '').strip()
             is_active = request.POST.get('is_active') == 'on'
-            
+
             try:
                 program = Program.objects.get(id=program_id, college=college)
                 # Check if code is being changed and if new code already exists
@@ -1642,7 +2077,7 @@ def manage_programs(request, college_id):
                     messages.success(request, f'Program {code} updated successfully!')
             except Program.DoesNotExist:
                 messages.error(request, 'Program not found!')
-                
+
         elif action == 'delete':
             program_id = request.POST.get('program_id')
             try:
@@ -1650,52 +2085,149 @@ def manage_programs(request, college_id):
                 # Check if any students are using this program
                 student_count = Student.objects.filter(program=program).count()
                 if student_count > 0:
-                    messages.warning(request, f'Cannot delete {program.code}! {student_count} students are enrolled in this program. Please reassign them first.')
+                    messages.warning(request,
+                                     f'Cannot delete {program.code}! {student_count} students are enrolled in this program. Please reassign them first.')
                 else:
                     program.delete()
                     messages.success(request, f'Program {program.code} deleted successfully!')
             except Program.DoesNotExist:
                 messages.error(request, 'Program not found!')
-        
+
+        elif action == 'add_major':
+            program_id = request.POST.get('program_id')
+            code = request.POST.get('code', '').strip()
+            name = request.POST.get('name', '').strip()
+
+            try:
+                program = Program.objects.get(id=program_id, college=college)
+                if code and name:
+                    if not Major.objects.filter(program=program, code=code).exists():
+                        Major.objects.create(program=program, code=code, name=name, is_active=True)
+                        messages.success(request, f'Major {code} added successfully to {program.code}!')
+                    else:
+                        messages.error(request, f'Major code {code} already exists in {program.code}!')
+                else:
+                    messages.error(request, 'Both code and name are required!')
+            except Program.DoesNotExist:
+                messages.error(request, 'Program not found!')
+
+        elif action == 'edit_major':
+            major_id = request.POST.get('major_id')
+            code = request.POST.get('code', '').strip()
+            name = request.POST.get('name', '').strip()
+            is_active = request.POST.get('is_active') == 'on'
+
+            try:
+                major = Major.objects.get(id=major_id, program__college=college)
+                if code != major.code and Major.objects.filter(program=major.program, code=code).exists():
+                    messages.error(request, f'Major code {code} already exists in {major.program.code}!')
+                else:
+                    major.code = code
+                    major.name = name
+                    major.is_active = is_active
+                    major.save()
+                    messages.success(request, f'Major {code} updated successfully!')
+            except Major.DoesNotExist:
+                messages.error(request, 'Major not found!')
+
+        elif action == 'delete_major':
+            major_id = request.POST.get('major_id')
+            try:
+                major = Major.objects.get(id=major_id, program__college=college)
+                # Check if any students are using this major
+                student_count = Student.objects.filter(major=major).count()
+                if student_count > 0:
+                    messages.warning(request,
+                                     f'Cannot delete {major.code}! {student_count} students are enrolled in this major. Please reassign them first.')
+                else:
+                    code = major.code
+                    major.delete()
+                    messages.success(request, f'Major {code} deleted successfully!')
+            except Major.DoesNotExist:
+                messages.error(request, 'Major not found!')
+
+        # Program/major changes feed lookup dropdowns: drop caches.
+        invalidate_lookup_caches()
         return redirect('manage_programs', college_id=college_id)
-    
-    # Count students per program
+
+    # Pull programs together with their majors in as few queries as
+    # possible, and annotate real (always-present, including zero) student
+    # counts at every level of the College -> Program -> Major hierarchy
+    # instead of the old per-object Student.objects.filter(...).count()
+    # loop, which silently dropped codes with no students and never
+    # surfaced majors at all.
+    programs = Program.objects.filter(college=college).annotate(
+        student_count=Count('students', distinct=True)
+    ).order_by('code').prefetch_related(
+        Prefetch(
+            'majors',
+            queryset=Major.objects.annotate(
+                student_count=Count('students', distinct=True)
+            ).order_by('code'),
+        )
+    )
+
     program_stats = {}
+    major_stats = {}
+    programs_with_majors = []
+
     for program in programs:
-        program_stats[program.code] = Student.objects.filter(program=program).count()
-    
-    # Convert to JSON for JavaScript
-    program_stats_json = json.dumps(program_stats)
-    
+        majors = list(program.majors.all())
+        majors_student_total = sum(major.student_count for major in majors)
+        # Students attached to the program directly (no major chosen) --
+        # only meaningful when the program actually has majors defined.
+        direct_count = program.student_count - majors_student_total
+
+        program_stats[program.code] = program.student_count
+        for major in majors:
+            major_stats[major.code] = major.student_count
+
+        programs_with_majors.append({
+            'program': program,
+            'majors': majors,
+            'direct_count': direct_count,
+        })
+
+    # Overall total for this college: sum of its programs' student counts.
+    # (Equal to Student.objects.filter(college=college).count() when data
+    # is consistent, since Student.clean() enforces program.college ==
+    # student.college.)
+    college_total = sum(program_stats.values())
+
     return render(request, 'qrapp/manage_programs.html', {
         'college': college,
+        'college_total': college_total,
         'programs': programs,
-        'program_stats': program_stats_json
+        'programs_with_majors': programs_with_majors,
+        # Raw objects: template embeds them via |json_script
+        'program_stats': program_stats,
+        'major_stats': major_stats,
     })
 
 
 # ---------------- USER MANAGEMENT ----------------
+@ratelimit(key=client_username, rate='60/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def manage_users(request):
     """AJAX handler for user management operations"""
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Invalid request method'})
-    
+
     action = request.POST.get('action')
-    
+
     if action == 'add':
         username = request.POST.get('username', '').strip()
         email = request.POST.get('email', '').strip()
         password = request.POST.get('password', '').strip()
         is_staff = request.POST.get('is_staff') == 'true'
         is_active = request.POST.get('is_active') == 'true'
-        
+
         if not username or not password:
             return JsonResponse({'success': False, 'error': 'Username and password are required'})
-        
+
         if User.objects.filter(username=username).exists():
             return JsonResponse({'success': False, 'error': f'Username {username} already exists'})
-        
+
         try:
             user = User.objects.create_user(
                 username=username,
@@ -1718,30 +2250,30 @@ def manage_users(request):
             })
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
-    
+
     elif action == 'edit':
         user_id = request.POST.get('user_id')
         email = request.POST.get('email', '').strip()
         is_staff = request.POST.get('is_staff') == 'true'
         is_active = request.POST.get('is_active') == 'true'
         new_password = request.POST.get('new_password', '').strip()
-        
+
         try:
             user = User.objects.get(id=user_id)
-            
+
             # Don't allow editing superuser
             if user.is_superuser and not request.user.is_superuser:
                 return JsonResponse({'success': False, 'error': 'Cannot edit superuser'})
-            
+
             user.email = email
             user.is_staff = is_staff
             user.is_active = is_active
-            
+
             if new_password:
                 user.set_password(new_password)
-            
+
             user.save()
-            
+
             return JsonResponse({
                 'success': True,
                 'message': f'User {user.username} updated successfully',
@@ -1758,22 +2290,22 @@ def manage_users(request):
             return JsonResponse({'success': False, 'error': 'User not found'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
-    
+
     elif action == 'delete':
         user_id = request.POST.get('user_id')
-        
+
         try:
             user = User.objects.get(id=user_id)
-            
+
             # Don't allow deleting superuser or self
             if user.is_superuser:
                 return JsonResponse({'success': False, 'error': 'Cannot delete superuser'})
             if user.id == request.user.id:
                 return JsonResponse({'success': False, 'error': 'Cannot delete yourself'})
-            
+
             username = user.username
             user.delete()
-            
+
             return JsonResponse({
                 'success': True,
                 'message': f'User {username} deleted successfully'
@@ -1782,15 +2314,15 @@ def manage_users(request):
             return JsonResponse({'success': False, 'error': 'User not found'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
-    
+
     elif action == 'approve':
         user_id = request.POST.get('user_id')
-        
+
         try:
             user = User.objects.get(id=user_id)
             user.is_active = True
             user.save()
-            
+
             return JsonResponse({
                 'success': True,
                 'message': f'User {user.username} approved successfully',
@@ -1807,7 +2339,7 @@ def manage_users(request):
             return JsonResponse({'success': False, 'error': 'User not found'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
-    
+
     return JsonResponse({'success': False, 'error': 'Invalid action'})
 
 
@@ -1824,6 +2356,7 @@ def _parse_optional_time(value):
     return None
 
 
+@ratelimit(key=client_username, rate='60/m', method=ratelimit.UNSAFE, block=True)
 @staff_member_required
 def manage_events(request):
     """Create and manage attendance events/sessions."""
@@ -1845,7 +2378,8 @@ def manage_events(request):
                 messages.error(request, "Event title is required.")
             else:
                 try:
-                    event_date = datetime.strptime(event_date_raw, "%Y-%m-%d").date() if event_date_raw else date.today()
+                    event_date = datetime.strptime(event_date_raw,
+                                                   "%Y-%m-%d").date() if event_date_raw else date.today()
                 except ValueError:
                     event_date = date.today()
 
@@ -1883,7 +2417,8 @@ def manage_events(request):
                     messages.error(request, "Event title is required.")
                 else:
                     try:
-                        event_date = datetime.strptime(event_date_raw, "%Y-%m-%d").date() if event_date_raw else event.event_date
+                        event_date = datetime.strptime(event_date_raw,
+                                                       "%Y-%m-%d").date() if event_date_raw else event.event_date
                     except ValueError:
                         event_date = event.event_date
 
@@ -1937,6 +2472,9 @@ def manage_events(request):
             except Event.DoesNotExist:
                 messages.error(request, "Event not found!")
 
+        # Event data feeds the calendar and lookup dropdowns: drop caches.
+        invalidate_calendar_cache()
+        invalidate_lookup_caches()
         return redirect("manage_events")
 
     event_stats = {
@@ -1947,29 +2485,229 @@ def manage_events(request):
     return render(request, "qrapp/manage_events.html", {
         "events": events,
         "today": date.today().isoformat(),
-        "event_stats": json.dumps(event_stats),
+        # Raw object: template embeds it via |json_script
+        "event_stats": event_stats,
     })
 
 
+@ratelimit(key=client_username, rate='120/m', block=True)
 @staff_member_required
 def get_events_json(request):
-    """AJAX endpoint for active events (scanner / filters)."""
+    """AJAX endpoint for active events (scanner / filters), cached."""
     active_only = request.GET.get("active_only", "true").lower() == "true"
-    events = Event.objects.all().order_by("-is_current", "-event_date", "title")
-    if active_only:
-        events = events.filter(is_active=True)
 
-    payload = [
-        {
-            "id": event.id,
-            "title": event.title,
-            "event_date": event.event_date.isoformat(),
-            "location": event.location,
-            "is_current": event.is_current,
-            "is_active": event.is_active,
-            "display_window": event.display_window,
-            "picture_url": event.picture.url if event.picture else "",
+    lookup_cache = caches["lookups"]
+    cache_key = build_lookups_cache_key("events", request.user.pk, f"active={active_only}")
+    payload = lookup_cache.get(cache_key)
+
+    if payload is None:
+        events = Event.objects.all().order_by("-is_current", "-event_date", "title")
+        if active_only:
+            events = events.filter(is_active=True)
+
+        event_payload = [
+            {
+                "id": event.id,
+                "title": event.title,
+                "event_date": event.event_date.isoformat(),
+                "location": event.location,
+                "is_current": event.is_current,
+                "is_active": event.is_active,
+                "display_window": event.display_window,
+                "picture_url": event.picture.url if event.picture else "",
+            }
+            for event in events
+        ]
+        payload = {"success": True, "events": event_payload}
+        lookup_cache.set(cache_key, payload, timeout=LOOKUPS_CACHE_TIMEOUT)
+
+    return JsonResponse(payload)
+
+
+@ratelimit(key=client_username, rate='120/m', block=True)
+@staff_member_required
+def get_majors_json(request, program_code):
+    """AJAX endpoint to get majors for a specific program (cached)."""
+    program = Program.objects.filter(code__iexact=program_code).select_related("college").first()
+    if not program:
+        return JsonResponse({"success": True, "majors": []})
+
+    active_only = request.GET.get("active_only", "true").lower() == "true"
+
+    lookup_cache = caches["lookups"]
+    cache_key = build_lookups_cache_key(
+        "majors", request.user.pk, f"program={program.code};active={active_only}"
+    )
+    payload = lookup_cache.get(cache_key)
+
+    if payload is None:
+        majors = Major.objects.filter(program=program)
+        if active_only:
+            majors = majors.filter(is_active=True)
+
+        payload = {
+            "success": True,
+            "majors": [
+                {
+                    "id": major.id,
+                    "code": major.code,
+                    "name": major.name,
+                    "is_active": major.is_active,
+                }
+                for major in majors.order_by("code")
+            ],
         }
-        for event in events
+        lookup_cache.set(cache_key, payload, timeout=LOOKUPS_CACHE_TIMEOUT)
+
+    return JsonResponse(payload)
+
+# ---------------- REALTIME: scans since a given id ----------------
+
+@ratelimit(key=client_username, rate='180/m', block=True)
+@staff_member_required
+def ajax_sidebar_logs(request):
+    """
+    Realtime feed for the sidebar "Live Logs" widget. Returns the most recent
+    attendance records (time-in / time-out) for today, newest first, so the
+    sidebar updates without a page refresh.
+
+    Optional GET params:
+      limit   – max rows to return (default 15, capped at 50)
+      since_id – only rows newer than this id (avoids re-pushing old rows)
+    """
+    try:
+        limit = min(max(int(request.GET.get("limit", 15) or 15), 1), 50)
+    except (TypeError, ValueError):
+        limit = 15
+
+    try:
+        since_id = int(request.GET.get("since_id", 0) or 0)
+    except (TypeError, ValueError):
+        since_id = 0
+
+    records = (
+        Attendance.objects.select_related("student", "student__program", "student__college")
+        .filter(timestamp__date=date.today())
+    )
+    if since_id:
+        records = records.filter(id__gt=since_id)
+
+    records = records.order_by("-timestamp", "-id")[:limit]
+
+    rows = [
+        {
+            "id": r.id,
+            "name": r.student.name,
+            "student_id": r.student.student_id,
+            "status": r.status,
+            "time": r.timestamp.strftime("%I:%M:%S %p"),
+            "event": (r.event_label or (r.event.title if r.event else "")),
+            "source": r.source,
+            "college": r.student.college_code,
+        }
+        for r in records
     ]
-    return JsonResponse({"success": True, "events": payload})
+
+    return JsonResponse({
+        "success": True,
+        "rows": rows,
+        # USE_TZ is False, so datetime.now() is already local (Asia/Manila).
+        "server_time": datetime.now().strftime("%I:%M:%S %p"),
+    })
+
+@ratelimit(key=client_username, rate='180/m', block=True)
+@staff_member_required
+def scans_since(request):
+    """
+    Returns attendance rows with id > since, respecting the same filters
+    used by the dashboard table. Polled every few seconds by the browser.
+    """
+    try:
+        since_id = int(request.GET.get("since", 0) or 0)
+    except (TypeError, ValueError):
+        since_id = 0
+
+    # ---- filters (mirror ajax_dashboard_data) ----
+    year_filter = request.GET.get("year")
+    program_filter = request.GET.get("program")
+    college_filter = request.GET.get("college")
+    search_query = request.GET.get("search")
+    status_filter = request.GET.get("status")
+    date_filter = request.GET.get("date")
+    start_date_filter = request.GET.get("start_date")
+    end_date_filter = request.GET.get("end_date")
+
+    records = Attendance.objects.select_related(
+        "student", "student__program", "student__college"
+    )
+
+    # Date scoping
+    selected_date = date.today()
+    if date_filter:
+        try:
+            selected_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
+            records = records.filter(timestamp__date=selected_date)
+        except ValueError:
+            records = records.filter(timestamp__date=selected_date)
+    elif start_date_filter and end_date_filter:
+        try:
+            sd = datetime.strptime(start_date_filter, "%Y-%m-%d").date()
+            ed = datetime.strptime(end_date_filter, "%Y-%m-%d").date()
+            records = records.filter(timestamp__date__range=[sd, ed])
+        except ValueError:
+            records = records.filter(timestamp__date=selected_date)
+    else:
+        records = records.filter(timestamp__date=selected_date)
+
+    # Filter by year / program / college
+    if year_filter:
+        records = records.filter(student__year=year_filter)
+    if program_filter:
+        records = records.filter(student__program__code=program_filter)
+    if college_filter:
+        records = records.filter(student__college__code=college_filter)
+    if search_query:
+        records = records.filter(
+            Q(student__name__icontains=search_query)
+            | Q(student__student_id__icontains=search_query)
+        )
+    if status_filter in ("in", "out"):
+        records = records.filter(status=status_filter.upper())
+
+    # Only rows newer than the client's last known id
+    new_records = records.filter(id__gt=since_id).order_by("id")
+
+    rows = [
+        {
+            "id": r.id,
+            "student_id": r.student.student_id,
+            "name": r.student.name,
+            "college": r.student.college_code,
+            "program": r.student.program_code,
+            "year": r.student.year,
+            "major": r.student.major_name,
+            "status": r.status,
+            "date": r.timestamp.strftime("%d/%m/%Y"),
+            "time": r.timestamp.strftime("%I:%M %p"),
+        }
+        for r in new_records[:50]     # cap to avoid huge bursts
+    ]
+
+    # Highest id we've seen, so client can advance its cursor
+    latest_id = since_id
+    if rows:
+        latest_id = rows[-1]["id"]
+    else:
+        # If no new rows, report the current max in the filtered window
+        # so the client doesn't re-query the entire table every tick.
+        highest = (
+            records.order_by("-id").values_list("id", flat=True).first()
+        )
+        if highest:
+            latest_id = max(since_id, highest) if since_id else highest
+
+    return JsonResponse({
+        "success": True,
+        "rows": rows,
+        "latest_id": latest_id,
+    })

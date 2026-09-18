@@ -7,13 +7,16 @@
     <h1>All Students QR Codes</h1>
     
     <div class="action-buttons">
-        <button onclick="window.print()" class="btn">Print All QR Codes</button>
+        <button data-action="print-page" class="btn">Print All QR Codes</button>
         <a href="{% url 'download_qr_pdf' %}" class="btn btn-success">Download as PDF</a>
         <a href="{% url 'add_student' %}" class="btn">Add New Student</a>
         <a href="{% url 'upload_pdf' %}" class="btn btn-secondary">Import Students</a>
+        <a href="{% url 'import_issues' %}" class="btn btn-warning">
+            <i class="fas fa-triangle-exclamation"></i> Import Issues{% if import_issue_count %} ({{ import_issue_count }}){% endif %}
+        </a>
         <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary">Admin Dashboard</a>
         <a href="{% url 'delete_all_qr' %}"
-           onclick="return confirm('Are you sure you want to delete ALL students and QR codes?');"
+           data-action="confirm-nav" data-confirm="Are you sure you want to delete ALL students and QR codes?"
            class="btn btn-danger">
            Delete All QR Codes
         </a>

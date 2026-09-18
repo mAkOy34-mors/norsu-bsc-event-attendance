@@ -1,5 +1,64 @@
+# ==========================================================
+#  Django QR Attendance System — .gitignore
+# ==========================================================
+
+# ---- Secrets & environment (never commit real credentials) ----
 .env
-.venv/
-staticfiles/
+.env.*
+!.env.example
+
+# ---- Python bytecode / packaging ----
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-log.txt
+
+# ---- Virtual environments ----
+venv/
+.venv/
+
+# ---- Django runtime & databases ----
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+*.sqlite3.bak
+db.sqlite3.backup-*
+/media/
+/staticfiles/
+
+# ---- Logs, temp files & scratch scripts ----
+*.log
+temp.pdf
+temp_upload.*
+temp_*.pdf
+*.bak
+# root-level scratch/diagnostic scripts (never matches qrapp/__init__.py)
+/_*.py
+
+# ---- Local data dumps (registrar backups, json exports) ----
+backup_data.json
+sqlite_data.json
+*-data.json.bak
+
+# ---- Local dev TLS certificates (self-signed, machine-specific) ----
+/cert/
+*.pem
+*.key
+*.crt
+*.p12
+
+# ---- IDEs / editors ----
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*

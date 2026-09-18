@@ -4,155 +4,144 @@
 {% block title %}Admin Dashboard | QR Attendance System{% endblock %}
 
 {% block content %}
-<!-- Page Header -->
-<div class="page-header">
-    <div class="header-content">
-        <h2>Admin Dashboard</h2>
-        <p>Event attendance analytics and management</p>
-    </div>
-    <div class="header-actions">
-        <span class="badge badge-info">{{ today|date:"M d, Y" }}</span>
-    </div>
-</div>
 
-<!-- Dashboard-only: Calendar + Analytics -->
-<div id="globalStats">
-    {% include 'qrapp/partials/live_calendar.html' %}
 
-    <div class="analytics-panel mb-3" id="eventAnalytics">
-        <div class="analytics-header">
-            <div>
-                <h3><i class="fas fa-chart-pie"></i> Event Analytics</h3>
-                <p class="analytics-subtitle">Snapshot for <strong id="analyticsEventLabel">{{ event_label }}</strong></p>
-            </div>
+    <!-- Header: welcome + rate chip (dashboard overview only) -->
+    <div class="header"{% if active_section and active_section != 'dashboard' %} style="display:none"{% endif %}>
+        <div class="welcome">
+            <h2>Welcome back, <span class="welcome-name">{{ request.user.username|title }}</span></h2>
+            <p>Snapshot for <strong id="analyticsEventLabel">{{ event_label }}</strong></p>
+        </div>
+        <div class="header-actions">
             <div class="attendance-rate-chip" title="Attendance rate">
                 <span class="rate-value" id="attendanceRate">{{ analytics.attendance_rate }}%</span>
                 <span class="rate-label">Rate</span>
             </div>
         </div>
-
-        <div class="stats-grid analytics-metrics">
-            <div class="stat-card stat-info">
-                <div class="stat-icon"><i class="fas fa-clipboard-list"></i></div>
-                <div class="stat-body">
-                    <div class="stat-label">Expected</div>
-                    <div class="stat-value" id="expectedCount">{{ analytics.expected }}</div>
-                </div>
-            </div>
-            <div class="stat-card stat-success">
-                <div class="stat-icon"><i class="fas fa-user-check"></i></div>
-                <div class="stat-body">
-                    <div class="stat-label">Attended</div>
-                    <div class="stat-value" id="attendedCount">{{ analytics.attended }}</div>
-                </div>
-            </div>
-            <div class="stat-card stat-danger">
-                <div class="stat-icon"><i class="fas fa-user-times"></i></div>
-                <div class="stat-body">
-                    <div class="stat-label">Absent</div>
-                    <div class="stat-value" id="absentCount">{{ analytics.absent }}</div>
-                </div>
-            </div>
-            <div class="stat-card stat-warning">
-                <div class="stat-icon"><i class="fas fa-door-open"></i></div>
-                <div class="stat-body">
-                    <div class="stat-label">On Site</div>
-                    <div class="stat-value" id="presentInCount">{{ analytics.still_inside }}</div>
-                </div>
-            </div>
-            <div class="stat-card stat-primary">
-                <div class="stat-icon"><i class="fas fa-flag-checkered"></i></div>
-                <div class="stat-body">
-                    <div class="stat-label">Completed</div>
-                    <div class="stat-value" id="presentOutCount">{{ analytics.completed }}</div>
-                </div>
-            </div>
-            <div class="stat-card stat-info">
-                <div class="stat-icon"><i class="fas fa-qrcode"></i></div>
-                <div class="stat-body">
-                    <div class="stat-label">Scans</div>
-                    <div class="stat-value" id="totalScansCount">{{ analytics.total_scans }}</div>
-                    <div class="stat-hint">{{ analytics.total_in_scans }} IN · {{ analytics.total_out_scans }} OUT</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="analytics-meta-grid">
-            <div class="meta-card">
-                <div class="meta-label"><i class="fas fa-play"></i> First Check-in</div>
-                <div class="meta-value" id="firstCheckin">{{ analytics.first_checkin }}</div>
-            </div>
-            <div class="meta-card">
-                <div class="meta-label"><i class="fas fa-stopwatch"></i> Last Activity</div>
-                <div class="meta-value" id="lastActivity">{{ analytics.last_activity }}</div>
-            </div>
-            <div class="meta-card">
-                <div class="meta-label"><i class="fas fa-bolt"></i> Peak Hour</div>
-                <div class="meta-value" id="peakHour">{{ analytics.peak_hour }}</div>
-                <div class="meta-hint" id="peakHourCount">{% if analytics.peak_hour_count %}{{ analytics.peak_hour_count }} check-ins{% else %}No check-ins yet{% endif %}</div>
-            </div>
-            <div class="meta-card">
-                <div class="meta-label"><i class="fas fa-percentage"></i> Exit Completion</div>
-                <div class="meta-value" id="completionRate">{{ analytics.completion_rate }}%</div>
-            </div>
-        </div>
-
-        <details class="analytics-details">
-            <summary>More breakdowns</summary>
-            <div class="analytics-breakdowns">
-                <div class="breakdown-card">
-                    <h4><i class="fas fa-university"></i> By College</h4>
-                    <div id="collegeBreakdown">
-                        {% for row in analytics.college_breakdown %}
-                        <div class="breakdown-row">
-                            <div class="breakdown-top">
-                                <span>{{ row.label }}</span>
-                                <span>{{ row.count }} <small>({{ row.percent }}%)</small></span>
-                            </div>
-                            <div class="breakdown-bar"><span style="width: {{ row.bar }}%;"></span></div>
-                        </div>
-                        {% empty %}
-                        <p class="breakdown-empty">No attendance data yet</p>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="breakdown-card">
-                    <h4><i class="fas fa-layer-group"></i> By Year Level</h4>
-                    <div id="yearBreakdown">
-                        {% for row in analytics.year_breakdown %}
-                        <div class="breakdown-row">
-                            <div class="breakdown-top">
-                                <span>{{ row.label }}</span>
-                                <span>{{ row.count }} <small>({{ row.percent }}%)</small></span>
-                            </div>
-                            <div class="breakdown-bar"><span style="width: {{ row.bar }}%;"></span></div>
-                        </div>
-                        {% empty %}
-                        <p class="breakdown-empty">No attendance data yet</p>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="breakdown-card">
-                    <h4><i class="fas fa-venus-mars"></i> By Gender</h4>
-                    <div id="sexBreakdown" class="sex-breakdown">
-                        {% for row in analytics.sex_breakdown %}
-                        <div class="sex-chip">
-                            <strong>{{ row.count }}</strong>
-                            <span>{{ row.label }}</span>
-                            <small>{{ row.percent }}%</small>
-                        </div>
-                        {% empty %}
-                        <p class="breakdown-empty">No attendance data yet</p>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </details>
     </div>
+<!-- Dashboard-only: Calendar + Analytics (hidden unless the dashboard section is active) -->
+<div id="globalStats"{% if active_section and active_section != 'dashboard' %} style="display:none"{% endif %}>
+    {% include 'qrapp/partials/live_calendar.html' %}
+    <!-- Stats row: icon chip on top, big number, label, hint -->
+    <div class="stats-grid analytics-metrics" id="eventAnalytics">
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-clipboard-list"></i></div>
+            <div class="stat-value" id="expectedCount">{{ analytics.expected }}</div>
+            <div class="stat-label">Expected</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-user-check"></i></div>
+            <div class="stat-value" id="attendedCount">{{ analytics.attended }}</div>
+            <div class="stat-label">Attended</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-user-times"></i></div>
+            <div class="stat-value" id="absentCount">{{ analytics.absent }}</div>
+            <div class="stat-label">Absent</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-door-open"></i></div>
+            <div class="stat-value" id="presentInCount">{{ analytics.still_inside }}</div>
+            <div class="stat-label">On Site</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-flag-checkered"></i></div>
+            <div class="stat-value" id="presentOutCount">{{ analytics.completed }}</div>
+            <div class="stat-label">Completed</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-qrcode"></i></div>
+            <div class="stat-value" id="totalScansCount">{{ analytics.total_scans }}</div>
+            <div class="stat-label">Scans</div>
+            <div class="stat-hint">{{ analytics.total_in_scans }} IN · {{ analytics.total_out_scans }} OUT</div>
+        </div>
+    </div>
+
+    <!-- Two-panel section: activity meta on the left, status on the right -->
+    <div class="chart-section">
+        <div class="chart-card">
+            <h3><i class="fas fa-chart-line"></i> Attendance Activity <span class="chart-hint">Live</span></h3>
+            <div class="analytics-meta-grid">
+                <div class="meta-card">
+                    <div class="meta-label"><i class="fas fa-play"></i> First Check-in</div>
+                    <div class="meta-value" id="firstCheckin">{{ analytics.first_checkin }}</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label"><i class="fas fa-stopwatch"></i> Last Activity</div>
+                    <div class="meta-value" id="lastActivity">{{ analytics.last_activity }}</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label"><i class="fas fa-bolt"></i> Peak Hour</div>
+                    <div class="meta-value" id="peakHour">{{ analytics.peak_hour }}</div>
+                    <div class="meta-hint" id="peakHourCount">{% if analytics.peak_hour_count %}{{ analytics.peak_hour_count }} check-ins{% else %}No check-ins yet{% endif %}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h3><i class="fas fa-chart-pie"></i> Attendance Status</h3>
+            <div class="empty-note">
+                <div class="stat-value" id="completionRate">{{ analytics.completion_rate }}%</div>
+                <div class="stat-label">Exit Completion</div>
+            </div>
+        </div>
+    </div>
+
+    <details class="analytics-details">
+        <summary>More breakdowns</summary>
+        <div class="analytics-breakdowns">
+            <div class="breakdown-card">
+                <h4><i class="fas fa-university"></i> By College</h4>
+                <div id="collegeBreakdown">
+                    {% for row in analytics.college_breakdown %}
+                    <div class="breakdown-row">
+                        <div class="breakdown-top">
+                            <span>{{ row.label }}</span>
+                            <span>{{ row.count }} <small>({{ row.percent }}%)</small></span>
+                        </div>
+                        <div class="breakdown-bar"><span data-bar="{{ row.bar }}"></span></div>
+                    </div>
+                    {% empty %}
+                    <p class="breakdown-empty">No attendance data yet</p>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="breakdown-card">
+                <h4><i class="fas fa-layer-group"></i> By Year Level</h4>
+                <div id="yearBreakdown">
+                    {% for row in analytics.year_breakdown %}
+                    <div class="breakdown-row">
+                        <div class="breakdown-top">
+                            <span>{{ row.label }}</span>
+                            <span>{{ row.count }} <small>({{ row.percent }}%)</small></span>
+                        </div>
+                        <div class="breakdown-bar"><span data-bar="{{ row.bar }}"></span></div>
+                    </div>
+                    {% empty %}
+                    <p class="breakdown-empty">No attendance data yet</p>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="breakdown-card">
+                <h4><i class="fas fa-venus-mars"></i> By Gender</h4>
+                <div id="sexBreakdown" class="sex-breakdown">
+                    {% for row in analytics.sex_breakdown %}
+                    <div class="sex-chip">
+                        <strong>{{ row.count }}</strong>
+                        <span>{{ row.label }}</span>
+                        <small>{{ row.percent }}%</small>
+                    </div>
+                    {% empty %}
+                    <p class="breakdown-empty">No attendance data yet</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </details>
 </div>
 
 <!-- Dashboard Tab -->
-<div id="dashboard" class="tabs active">
+<div id="dashboard" class="tabs{% if active_section == 'dashboard' or not active_section %} active{% endif %}">
     <!-- Dashboard filters: scan/attendance focused -->
     <div class="card mb-3 filter-section" data-for="dashboard">
         <div class="card-header">
@@ -228,14 +217,18 @@
     </div>
 
     <div class="card">
-        <div class="card-header">
-            <h3><i class="fas fa-calendar-check"></i> Today's Attendance</h3>
-            <div class="card-actions">
-                <button type="button" class="btn btn-secondary btn-sm" data-export="dashboardTable">
-                    <i class="fas fa-download"></i> Export
-                </button>
-            </div>
+    <div class="card-header">
+        <h3><i class="fas fa-calendar-check"></i> Today's Attendance
+            <span class="live-pill"><span class="live-dot"></span> Live</span>
+        </h3>
+        <div class="card-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-export="dashboardTable">
+                <i class="fas fa-download"></i> Export
+            </button>
         </div>
+    </div>
+    <div class="card-body">
+        ...
         <div class="card-body">
             <div class="table-container">
                 <table id="dashboardTable">
@@ -253,28 +246,28 @@
                         </tr>
                     </thead>
                     <tbody id="dashboardTableBody">
-                        {% for record in scanned_records %}
-                        <tr>
-                            <td>{{ record.student.student_id }}</td>
-                            <td>{{ record.student.name }}</td>
-                            <td>{{ record.student.college_code }}</td>
-                            <td>{{ record.student.program_code }}</td>
-                            <td>{{ record.student.year }}</td>
-                            <td>{{ record.student.major }}</td>
-                            <td>
-                                <span class="badge badge-{% if record.status == 'IN' %}info{% else %}warning{% endif %}">
-                                    {{ record.status }}
-                                </span>
-                            </td>
-                            <td>{{ record.timestamp|date:"d/m/Y" }}</td>
-                            <td>{{ record.timestamp|date:"h:i A" }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="9" class="text-center">No attendance records found</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
+    {% for record in scanned_records %}
+    <tr data-attendance-id="{{ record.id }}">
+        <td>{{ record.student.student_id }}</td>
+        <td>{{ record.student.name }}</td>
+        <td>{{ record.student.college_code }}</td>
+        <td>{{ record.student.program_code }}</td>
+        <td>{{ record.student.year }}</td>
+        <td>{{ record.student.major_name }}</td>
+        <td>
+            <span class="badge badge-{% if record.status == 'IN' %}info{% else %}warning{% endif %}">
+                {{ record.status }}
+            </span>
+        </td>
+        <td>{{ record.timestamp|date:"d/m/Y" }}</td>
+        <td>{{ record.timestamp|date:"h:i A" }}</td>
+    </tr>
+    {% empty %}
+    <tr class="empty-row">
+        <td colspan="9" class="text-center">No attendance records found</td>
+    </tr>
+    {% endfor %}
+</tbody>
                 </table>
             </div>
             <div class="card-footer">
@@ -294,9 +287,10 @@
         </div>
     </div>
 </div>
+</div><!-- /#dashboard (was missing: students/reports/approve were nested inside the hidden dashboard tab) -->
 
 <!-- Students Tab -->
-<div id="students" class="tabs">
+<div id="students" class="tabs{% if active_section == 'students' %} active{% endif %}">
     <!-- Students filters: roster only (no attendance status/date) -->
     <div class="card mb-3 filter-section" data-for="students">
         <div class="card-header">
@@ -349,21 +343,24 @@
             <h3><i class="fas fa-users"></i> Student List</h3>
             <div class="card-actions-split">
                 <div class="actions-primary">
-                    <button type="button" class="btn btn-success btn-sm" onclick="openModal('addStudentModal')">
+                    <button type="button" class="btn btn-success btn-sm" data-action="open-modal" data-target="addStudentModal">
                         <i class="fas fa-plus"></i> Add
                     </button>
-                    <button type="button" class="btn btn-info btn-sm" onclick="openModal('uploadStudentsModal')">
+                    <button type="button" class="btn btn-info btn-sm" data-action="open-modal" data-target="uploadStudentsModal">
                         <i class="fas fa-upload"></i> Import Students
                     </button>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="openQrCodesModal()">
+                    <button type="button" class="btn btn-primary btn-sm" data-action="open-qr-codes">
                         <i class="fas fa-qrcode"></i> QR Codes
                     </button>
                 </div>
                 <div class="actions-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="openExportStudentsModal()">
+                    <a href="{% url 'import_issues' %}" class="btn btn-warning btn-sm" title="Students the last import could not identify">
+                        <i class="fas fa-triangle-exclamation"></i> Import Issues{% if import_issue_count %} ({{ import_issue_count }}){% endif %}
+                    </a>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="open-export-students">
                         <i class="fas fa-download"></i> Export
                     </button>
-                    <a href="{% url 'delete_all_qr' %}" class="btn btn-danger btn-sm" onclick="return confirm('Delete ALL students and QR codes? This action cannot be undone!');">
+                    <a href="{% url 'delete_all_qr' %}" class="btn btn-danger btn-sm" data-action="confirm-nav" data-confirm="Delete ALL students and QR codes? This action cannot be undone!">
                         <i class="fas fa-trash"></i> Delete All
                     </a>
                 </div>
@@ -380,7 +377,7 @@
                             <th>Program</th>
                             <th>Year</th>
                             <th>Major</th>
-                            <th>Actions</th>
+                            <th class="cell-actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="studentsTableBody">
@@ -391,15 +388,15 @@
                             <td>{{ data.student.college_code }}</td>
                             <td>{{ data.student.program_code }}</td>
                             <td>{{ data.student.year }}</td>
-                            <td>{{ data.student.major }}</td>
-                            <td>
+                            <td>{{ data.student.major_name }}</td>
+                            <td class="cell-actions">
                                 <div class="table-actions">
-                                    <button type="button" class="btn btn-warning btn-sm" onclick="openEditStudentModal({{ data.student.id }}, '{{ data.student.student_id }}', '{{ data.student.name }}', '{{ data.student.sex }}', '{{ data.student.college_code }}', '{{ data.student.program_code }}', {{ data.student.year }}, '{{ data.student.major }}')">
+                                    <button type="button" class="btn btn-warning btn-sm" data-action="open-edit-student" data-payload='{"id": {{ data.student.id }}, "studentId": "{{ data.student.student_id|escapejs }}", "name": "{{ data.student.name|escapejs }}", "sex": "{{ data.student.sex|escapejs }}", "college": "{{ data.student.college_code|escapejs }}", "program": "{{ data.student.program_code|escapejs }}", "year": {{ data.student.year }}, "major": "{{ data.student.major_name|escapejs }}"}'>
                                         <i class="fas fa-edit"></i> Edit
                                     </button>
                                     <a href="{% url 'delete_student' data.student.id %}" class="btn btn-danger btn-sm"
-                                       onclick="return confirm('Delete this student?');">
-                                        <i class="fas fa-trash"></i>
+                                       data-action="confirm-nav" data-confirm="Delete this student?">
+                                        <i class="fas fa-trash"></i> Del
                                     </a>
                                 </div>
                             </td>
@@ -431,7 +428,7 @@
 </div>
 
 <!-- Reports Tab -->
-<div id="reports" class="tabs">
+<div id="reports" class="tabs{% if active_section == 'reports' %} active{% endif %}">
     <!-- Reports filters: attendance report + date range -->
     <div class="card mb-3 filter-section" data-for="reports">
         <div class="card-header">
@@ -492,7 +489,7 @@
             </div>
             <details class="mt-2">
                 <summary class="advanced-filters-summary">
-                    <i class="fas fa-cog"></i> Date & Time Range
+                    <i class="fas fa-cog"></i> Date &amp; Time Range
                 </summary>
                 <div class="filter-grid mt-2">
                     <div class="form-group">
@@ -520,10 +517,10 @@
         <div class="card-header">
             <h3><i class="fas fa-file-alt"></i> Full Report</h3>
             <div class="card-actions">
-                <button type="button" class="btn btn-primary btn-sm" onclick="openModal('printModal')">
+                <button type="button" class="btn btn-primary btn-sm" data-action="open-modal" data-target="printModal">
                     <i class="fas fa-print"></i> Print
                 </button>
-                <button type="button" class="btn btn-success btn-sm" onclick="openModal('exportModal')">
+                <button type="button" class="btn btn-success btn-sm" data-action="open-modal" data-target="exportModal">
                     <i class="fas fa-download"></i> Export
                 </button>
             </div>
@@ -553,7 +550,7 @@
                             <td>{{ data.student.college_code }}</td>
                             <td>{{ data.student.program_code }}</td>
                             <td>{{ data.student.year }}</td>
-                            <td>{{ data.student.major }}</td>
+                            <td>{{ data.student.major_name }}</td>
                             <td>{{ data.time_in|date:"h:i A"|default:"-" }}</td>
                             <td>{{ data.time_out|date:"h:i A"|default:"-" }}</td>
                             <td>{{ data.date|date:"d/m/Y"|default:"-" }}</td>
@@ -590,11 +587,11 @@
 </div>
 
 <!-- Approve Users Tab -->
-<div id="approve" class="tabs">
+<div id="approve" class="tabs{% if active_section == 'approve' %} active{% endif %}">
     <div class="card">
         <div class="card-header">
             <h3><i class="fas fa-users-cog"></i> User Management</h3>
-            <button type="button" class="btn btn-primary btn-sm" onclick="openAddUserModal()">
+            <button type="button" class="btn btn-primary btn-sm" data-action="open-add-user">
                 <i class="fas fa-plus"></i> Add User
             </button>
         </div>
@@ -603,7 +600,7 @@
                 <div class="stat-card stat-warning">
                     <div class="stat-icon"><i class="fas fa-clock"></i></div>
                     <div class="stat-label">Pending</div>
-                    <div class="stat-value">{{ pending_users.count }}</div>
+                    <div class="stat-value">{{ pending_users|length }}</div>
                 </div>
                 <div class="stat-card stat-success">
                     <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
@@ -616,11 +613,11 @@
                     <div class="stat-value">{{ total_users }}</div>
                 </div>
             </div>
-            
+
             {% if pending_users %}
             <div class="pending-approvals">
                 <h4 class="pending-approvals-title">
-                    <i class="fas fa-exclamation-triangle"></i> Pending Approvals ({{ pending_users.count }})
+                    <i class="fas fa-exclamation-triangle"></i> Pending Approvals ({{ pending_users|length }})
                 </h4>
                 <div class="pending-list">
                     {% for user in pending_users %}
@@ -632,7 +629,7 @@
                             <div class="user-name">{{ user.username }}</div>
                             <div class="form-hint">{{ user.email }}</div>
                         </div>
-                        <button type="button" class="btn btn-success btn-sm" onclick="approveUser({{ user.id }}, '{{ user.username }}')">
+                        <button type="button" class="btn btn-success btn-sm" data-action="approve-user" data-user-id="{{ user.id }}" data-user-name="{{ user.username|escapejs }}">
                             <i class="fas fa-check"></i> Approve
                         </button>
                     </div>
@@ -640,7 +637,7 @@
                 </div>
             </div>
             {% endif %}
-            
+
             <div class="table-container">
                 <table id="usersTable">
                     <thead>
@@ -650,7 +647,7 @@
                             <th>Role</th>
                             <th>Status</th>
                             <th>Joined</th>
-                            <th>Actions</th>
+                            <th class="cell-actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="usersTableBody">
@@ -688,17 +685,17 @@
                             <td>
                                 <div class="table-actions">
                                     {% if not user.is_active %}
-                                        <button type="button" class="btn btn-success btn-sm" onclick="approveUser({{ user.id }}, '{{ user.username }}')">
+                                        <button type="button" class="btn btn-success btn-sm" data-action="approve-user" data-user-id="{{ user.id }}" data-user-name="{{ user.username|escapejs }}">
                                             <i class="fas fa-check"></i> Approve
                                         </button>
                                     {% endif %}
                                     {% if not user.is_superuser %}
-                                        <button type="button" class="btn btn-warning btn-sm" onclick="openEditUserModal({{ user.id }}, '{{ user.username }}', '{{ user.email }}', {{ user.is_staff|yesno:'true,false' }}, {{ user.is_active|yesno:'true,false' }})">
+                                        <button type="button" class="btn btn-warning btn-sm" data-action="open-edit-user" data-payload='{"id": {{ user.id }}, "username": "{{ user.username|escapejs }}", "email": "{{ user.email|escapejs }}", "isStaff": {{ user.is_staff|yesno:'true,false' }}, "isActive": {{ user.is_active|yesno:'true,false' }}}'>
                                             <i class="fas fa-edit"></i>
                                         </button>
                                         {% if user.id != request.user.id %}
-                                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteUser({{ user.id }}, '{{ user.username }}')">
-                                            <i class="fas fa-trash"></i>
+                                        <button type="button" class="btn btn-danger btn-sm" data-action="delete-user" data-user-id="{{ user.id }}" data-user-name="{{ user.username|escapejs }}">
+                                            <i class="fas fa-trash"></i> Del
                                         </button>
                                         {% endif %}
                                     {% endif %}
@@ -718,7 +715,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-user-plus"></i> Add New User</h3>
-            <button class="modal-close" onclick="closeModal('addUserModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="addUserModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="addUserForm">
@@ -749,10 +746,10 @@
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('addUserModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="addUserModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-primary" onclick="submitAddUser()">
+            <button class="btn btn-primary" data-action="submit-add-user">
                 <i class="fas fa-plus"></i> Add User
             </button>
         </div>
@@ -764,7 +761,7 @@
     <div class="modal-content modal-lg">
         <div class="modal-header">
             <h3><i class="fas fa-user-graduate"></i> Add New Student</h3>
-            <button class="modal-close" onclick="closeModal('addStudentModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="addStudentModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="addStudentForm">
@@ -774,13 +771,13 @@
                         <label for="addStudentId">Student ID *</label>
                         <input type="text" id="addStudentId" class="form-control" placeholder="Enter student ID" required>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="addStudentName">Full Name *</label>
                         <input type="text" id="addStudentName" class="form-control" placeholder="Enter full name" required>
                     </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="addStudentGender">Gender *</label>
@@ -790,7 +787,7 @@
                             <option value="F">Female</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="addStudentCollege">College *</label>
                         <select id="addStudentCollege" class="form-control" required>
@@ -801,7 +798,7 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="addStudentProgram">Program *</label>
@@ -809,7 +806,7 @@
                             <option value="">-- Select Program --</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="addStudentYear">Year *</label>
                         <select id="addStudentYear" class="form-control" required>
@@ -822,18 +819,21 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="form-group">
-                    <label for="addStudentMajor">Major *</label>
-                    <input type="text" id="addStudentMajor" class="form-control" placeholder="Enter major" required>
+                    <label for="addStudentMajor">Major (optional)</label>
+                    <select id="addStudentMajor" class="form-control">
+                        <option value="">-- No Major --</option>
+                    </select>
+                    <small class="form-text">Only programs with majors will show options</small>
                 </div>
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('addStudentModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="addStudentModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-success" onclick="submitAddStudent()">
+            <button class="btn btn-success" data-action="submit-add-student">
                 <i class="fas fa-plus"></i> Add Student
             </button>
         </div>
@@ -845,7 +845,7 @@
     <div class="modal-content modal-md">
         <div class="modal-header">
             <h3><i class="fas fa-file-upload"></i> Import Students</h3>
-            <button class="modal-close" onclick="closeModal('uploadStudentsModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="uploadStudentsModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="uploadStudentsForm" enctype="multipart/form-data">
@@ -856,7 +856,19 @@
                            accept=".pdf,.csv,.xlsx,.xlsm,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
                     <small class="form-hint">Supported formats: PDF, CSV, Excel (.xlsx)</small>
                 </div>
-                
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="allowGeneratedIds" name="allow_generated_ids">
+                        Also import rows whose student number is missing or printed twice
+                    </label>
+                    <small class="form-hint">
+                        Off by default. A row with no student number is stored as
+                        NOID-&lt;PROGRAM&gt;-&lt;YEAR&gt;-&lt;LINE&gt; and a number printed for a second
+                        student gets a -DUP2 suffix, so nothing is left out — review those students.
+                    </small>
+                </div>
+
                 <div class="info-callout">
                     <div class="info-callout-title">
                         <i class="fas fa-info-circle"></i> File Requirements
@@ -871,11 +883,11 @@
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('uploadStudentsModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="uploadStudentsModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-primary" onclick="submitUploadStudents(event)">
-                <i class="fas fa-upload"></i> Upload & Process
+            <button class="btn btn-primary" data-action="submit-upload-students">
+                <i class="fas fa-upload"></i> Upload &amp; Process
             </button>
         </div>
     </div>
@@ -886,26 +898,26 @@
     <div class="modal-content modal-lg">
         <div class="modal-header">
             <h3><i class="fas fa-user-edit"></i> Edit Student</h3>
-            <button class="modal-close" onclick="closeModal('editStudentModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="editStudentModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="editStudentForm">
                 {% csrf_token %}
                 <input type="hidden" id="editStudentDbId">
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
-                        <label for="editStudentId">Student ID</label>
-                        <input type="text" id="editStudentId" class="form-control" disabled>
-                        <small class="form-text">Student ID cannot be changed</small>
+                        <label for="editStudentId">Student ID *</label>
+                        <input type="text" id="editStudentId" class="form-control" required maxlength="20">
+                        <small class="form-text">QR codes and scanner tokens will automatically use the new number</small>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="editStudentName">Full Name *</label>
                         <input type="text" id="editStudentName" class="form-control" required>
                     </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="editStudentGender">Gender *</label>
@@ -914,7 +926,7 @@
                             <option value="F">Female</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="editStudentCollege">College *</label>
                         <select id="editStudentCollege" class="form-control" required>
@@ -925,7 +937,7 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="editStudentProgram">Program *</label>
@@ -933,7 +945,7 @@
                             <option value="">-- Select Program --</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="editStudentYear">Year *</label>
                         <select id="editStudentYear" class="form-control" required>
@@ -945,18 +957,21 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="form-group">
-                    <label for="editStudentMajor">Major *</label>
-                    <input type="text" id="editStudentMajor" class="form-control" required>
+                    <label for="editStudentMajor">Major (optional)</label>
+                    <select id="editStudentMajor" class="form-control">
+                        <option value="">-- No Major --</option>
+                    </select>
+                    <small class="form-text">Only programs with majors will show options</small>
                 </div>
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('editStudentModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="editStudentModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-warning" onclick="submitEditStudent()">
+            <button class="btn btn-warning" data-action="submit-edit-student">
                 <i class="fas fa-save"></i> Save Changes
             </button>
         </div>
@@ -968,7 +983,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-user-edit"></i> Edit User</h3>
-            <button class="modal-close" onclick="closeModal('editUserModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="editUserModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="editUserForm">
@@ -1001,10 +1016,10 @@
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('editUserModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="editUserModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-primary" onclick="submitEditUser()">
+            <button class="btn btn-primary" data-action="submit-edit-user">
                 <i class="fas fa-save"></i> Save Changes
             </button>
         </div>
@@ -1016,7 +1031,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-print"></i> Print Report Options</h3>
-            <button class="modal-close" onclick="closeModal('printModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="printModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="printOptionsForm">
@@ -1024,7 +1039,7 @@
                     <label for="printEvent">Event/Occasion</label>
                     <input type="text" id="printEvent" class="form-control" placeholder="e.g., Morning Assembly, Flag Ceremony">
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="printCollege">College</label>
@@ -1035,7 +1050,7 @@
                             {% endfor %}
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="printProgram">Program</label>
                         <select id="printProgram" class="form-control">
@@ -1046,31 +1061,31 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="printDateFrom">Date From</label>
                         <input type="date" id="printDateFrom" class="form-control">
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="printDateTo">Date To</label>
                         <input type="date" id="printDateTo" class="form-control">
                     </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="printTimeFrom">Time From</label>
                         <input type="time" id="printTimeFrom" class="form-control">
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="printTimeTo">Time To</label>
                         <input type="time" id="printTimeTo" class="form-control">
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="printGender">Gender</label>
                     <select id="printGender" class="form-control">
@@ -1079,14 +1094,14 @@
                         <option value="Female">Female</option>
                     </select>
                 </div>
-                
+
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="printIncludeHeaders" checked>
-                        Include Headers & Title
+                        Include Headers &amp; Title
                     </label>
                 </div>
-                
+
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="printIncludeStats" checked>
@@ -1096,10 +1111,10 @@
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('printModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="printModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-primary" onclick="applyPrintOptions()">
+            <button class="btn btn-primary" data-action="apply-print">
                 <i class="fas fa-print"></i> Print Now
             </button>
         </div>
@@ -1111,7 +1126,7 @@
     <div class="modal-content modal-md">
         <div class="modal-header">
             <h3><i class="fas fa-download"></i> Export Students</h3>
-            <button class="modal-close" onclick="closeModal('exportStudentsModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="exportStudentsModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="exportStudentsForm">
@@ -1147,9 +1162,12 @@
                             <option value="4">Year 4</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group is-hidden" id="exportStudentsMajorGroup">
                         <label for="exportStudentsMajor">Major</label>
-                        <input type="text" id="exportStudentsMajor" class="form-control" placeholder="All majors">
+                        <select id="exportStudentsMajor" class="form-control">
+                            <option value="">All Majors</option>
+                        </select>
+                        <small class="form-text">Shown when the selected program has majors</small>
                     </div>
                 </div>
 
@@ -1187,10 +1205,10 @@
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('exportStudentsModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="exportStudentsModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-success" id="exportStudentsSubmitBtn" onclick="applyExportStudents()">
+            <button class="btn btn-success" id="exportStudentsSubmitBtn" data-action="apply-export-students">
                 <i class="fas fa-download"></i> Export Now
             </button>
         </div>
@@ -1202,7 +1220,7 @@
     <div class="modal-content modal-xl">
         <div class="modal-header">
             <h3><i class="fas fa-qrcode"></i> QR Codes</h3>
-            <button class="modal-close" onclick="closeModal('qrCodesModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="qrCodesModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="qrCodesForm">
@@ -1238,9 +1256,12 @@
                             <option value="4">Year 4</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group is-hidden" id="qrMajorGroup">
                         <label for="qrMajor">Major</label>
-                        <input type="text" id="qrMajor" class="form-control" placeholder="All majors">
+                        <select id="qrMajor" class="form-control">
+                            <option value="">All Majors</option>
+                        </select>
+                        <small class="form-text">Shown when the selected program has majors</small>
                     </div>
                 </div>
 
@@ -1257,28 +1278,34 @@
             <div class="qr-modal-toolbar">
                 <span class="qr-modal-count" id="qrCodesCount">Load QR codes using the filters above.</span>
                 <div class="card-actions">
-                    <button type="button" class="btn btn-primary btn-sm" id="qrLoadBtn" onclick="loadQrCodes()">
+                    <button type="button" class="btn btn-primary btn-sm" id="qrLoadBtn" data-action="load-qr-codes">
                         <i class="fas fa-sync-alt"></i> Load QR Codes
                     </button>
-                    <button type="button" class="btn btn-success btn-sm" id="qrExportPdfBtn" onclick="exportQrCodes('pdf')">
+                    <button type="button" class="btn btn-success btn-sm" id="qrExportPdfBtn" data-action="export-qr" data-format="pdf">
                         <i class="fas fa-file-pdf"></i> Export PDF
                     </button>
-                    <button type="button" class="btn btn-info btn-sm" id="qrExportZipBtn" onclick="exportQrCodes('zip')">
+                    <button type="button" class="btn btn-info btn-sm" id="qrExportZipBtn" data-action="export-qr" data-format="zip">
                         <i class="fas fa-file-archive"></i> Export ZIP
                     </button>
                 </div>
             </div>
+            <small class="form-text">Previews load automatically in batches; PDF/ZIP exports always include every student matching the filters, even beyond what is shown above.</small>
 
-            <div id="qrCodesLoading" class="qr-modal-loading" style="display: none;">
+            <div id="qrCodesLoading" class="qr-modal-loading is-hidden">
                 <i class="fas fa-spinner fa-spin"></i> Generating QR codes...
             </div>
-            <div id="qrCodesEmpty" class="qr-modal-empty" style="display: none;">
+            <div class="qr-modal-toolbar">
+                <button type="button" class="btn btn-secondary btn-sm is-hidden" id="qrCodesMore">
+                    <i class="fas fa-plus"></i> Load more
+                </button>
+            </div>
+            <div id="qrCodesEmpty" class="qr-modal-empty is-hidden">
                 No students match the selected filters.
             </div>
             <div id="qrCodesGrid" class="qr-modal-grid"></div>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('qrCodesModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="qrCodesModal">
                 <i class="fas fa-times"></i> Close
             </button>
         </div>
@@ -1290,27 +1317,36 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-download"></i> Export Report Options</h3>
-            <button class="modal-close" onclick="closeModal('exportModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="exportModal">&times;</button>
         </div>
         <div class="modal-body">
             <form id="exportOptionsForm">
-                <div class="form-group">
-                    <label for="exportEvent">Event/Occasion</label>
-                    <input type="text" id="exportEvent" class="form-control" placeholder="e.g., Morning Assembly, Flag Ceremony">
-                    <small class="form-text">This will be included in the filename</small>
+                <div class="filter-grid">
+                    <div class="form-group">
+                        <label for="exportEvent">Event/Occasion</label>
+                        <select id="exportEvent" class="form-control">
+                            <option value="">All Events</option>
+                            {% for event in all_events %}
+                            <option value="{{ event.title }}" data-date="{{ event.event_date|date:'Y-m-d' }}">
+                                {{ event.title }}{% if event.is_current %} — Current{% endif %} ({{ event.event_date|date:'M d, Y' }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="form-text">An event exports that event's actual scans; dates only apply when you type them</small>
+                    </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="exportCollege">College</label>
-                        <select id="exportCollege" class="form-control">
+                        <select id="exportCollege" class="form-control filter-college" data-program-target="exportProgram">
                             <option value="">All Colleges</option>
                             {% for college in unique_colleges %}
                             <option value="{{ college }}">{{ college }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="exportProgram">Program</label>
                         <select id="exportProgram" class="form-control">
@@ -1321,31 +1357,51 @@
                         </select>
                     </div>
                 </div>
-                
+
+                <div class="filter-grid">
+                    <div class="form-group">
+                        <label for="exportYear">Year Level</label>
+                        <select id="exportYear" class="form-control">
+                            <option value="">All Years</option>
+                            <option value="1">Year 1</option>
+                            <option value="2">Year 2</option>
+                            <option value="3">Year 3</option>
+                            <option value="4">Year 4</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group is-hidden" id="exportMajorGroup">
+                        <label for="exportMajor">Major</label>
+                        <select id="exportMajor" class="form-control">
+                            <option value="">All Majors</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="exportDateFrom">Date From</label>
                         <input type="date" id="exportDateFrom" class="form-control">
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="exportDateTo">Date To</label>
                         <input type="date" id="exportDateTo" class="form-control">
                     </div>
                 </div>
-                
+
                 <div class="filter-grid">
                     <div class="form-group">
                         <label for="exportTimeFrom">Time From</label>
                         <input type="time" id="exportTimeFrom" class="form-control">
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="exportTimeTo">Time To</label>
                         <input type="time" id="exportTimeTo" class="form-control">
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="exportGender">Gender</label>
                     <select id="exportGender" class="form-control">
@@ -1354,7 +1410,7 @@
                         <option value="Female">Female</option>
                     </select>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="exportFormat">Export Format</label>
                     <select id="exportFormat" class="form-control">
@@ -1362,14 +1418,14 @@
                         <option value="xlsx">Excel (.xlsx)</option>
                     </select>
                 </div>
-                
+
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="exportIncludeHeaders" checked>
                         Include Column Headers
                     </label>
                 </div>
-                
+
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="exportIncludeSummary">
@@ -1379,10 +1435,10 @@
             </form>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('exportModal')">
+            <button class="btn btn-secondary" data-action="close-modal" data-target="exportModal">
                 <i class="fas fa-times"></i> Cancel
             </button>
-            <button class="btn btn-success" onclick="applyExportOptions()">
+            <button class="btn btn-success" data-action="apply-export">
                 <i class="fas fa-download"></i> Export Now
             </button>
         </div>
@@ -1392,627 +1448,9 @@
 <!-- Load jQuery -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
-<script>
-// College-Program mapping from server
-const collegeProgramsMap = {{ college_programs_json|safe }};
-const studentProgramsByCollege = {{ student_programs_by_college_json|safe }};
-
-// Function to update program dropdown based on selected college
-function updateProgramDropdown(collegeSelectId, programSelectId) {
-    const collegeSelect = document.getElementById(collegeSelectId);
-    const programSelect = document.getElementById(programSelectId);
-    
-    if (!collegeSelect || !programSelect) return;
-
-    const previousValue = programSelect.value;
-    const selectedCollege = collegeSelect.value;
-    const added = new Set();
-
-    function addProgram(code, label) {
-        if (!code || added.has(code)) return;
-        added.add(code);
-        const option = document.createElement('option');
-        option.value = code;
-        option.textContent = label || code;
-        programSelect.appendChild(option);
-    }
-
-    programSelect.innerHTML = '<option value="">All Programs</option>';
-
-    if (selectedCollege) {
-        if (collegeProgramsMap[selectedCollege]) {
-            collegeProgramsMap[selectedCollege].forEach(program => {
-                addProgram(program.code, program.code + ' - ' + program.name);
-            });
-        }
-        if (studentProgramsByCollege[selectedCollege]) {
-            studentProgramsByCollege[selectedCollege].forEach(code => {
-                addProgram(code, code);
-            });
-        }
-    } else {
-        Object.keys(collegeProgramsMap).forEach(college => {
-            collegeProgramsMap[college].forEach(program => {
-                addProgram(program.code, program.code + ' - ' + program.name);
-            });
-        });
-        Object.keys(studentProgramsByCollege).forEach(college => {
-            studentProgramsByCollege[college].forEach(code => {
-                addProgram(code, code);
-            });
-        });
-    }
-
-    if (previousValue && Array.from(programSelect.options).some(opt => opt.value === previousValue)) {
-        programSelect.value = previousValue;
-    }
-}
-
-// Setup event listeners when page loads
-document.addEventListener('DOMContentLoaded', () => {
-    // Print / Export modals
-    const printCollegeSelect = document.getElementById('printCollege');
-    if (printCollegeSelect) {
-        printCollegeSelect.addEventListener('change', () => {
-            updateProgramDropdown('printCollege', 'printProgram');
-        });
-    }
-
-    const exportCollegeSelect = document.getElementById('exportCollege');
-    if (exportCollegeSelect) {
-        exportCollegeSelect.addEventListener('change', () => {
-            updateProgramDropdown('exportCollege', 'exportProgram');
-        });
-    }
-
-    // Per-menu college → program filters
-    document.querySelectorAll('.filter-college').forEach(collegeSelect => {
-        collegeSelect.addEventListener('change', () => {
-            const programId = collegeSelect.dataset.programTarget;
-            if (programId) {
-                updateProgramDropdown(collegeSelect.id, programId);
-            }
-        });
-    });
-});
-
-// ==================== USER MANAGEMENT FUNCTIONS ====================
-function openAddUserModal() {
-    document.getElementById('addUserModal').classList.add('active');
-}
-
-function openEditUserModal(id, username, email, isStaff, isActive) {
-    document.getElementById('editUserId').value = id;
-    document.getElementById('editUsername').value = username;
-    document.getElementById('editEmail').value = email;
-    document.getElementById('editIsStaff').checked = isStaff;
-    document.getElementById('editIsActive').checked = isActive;
-    document.getElementById('editUserModal').classList.add('active');
-}
-
-function submitAddUser() {
-    const username = document.getElementById('addUsername').value.trim();
-    const email = document.getElementById('addEmail').value.trim();
-    const password = document.getElementById('addPassword').value;
-    const isStaff = document.getElementById('addIsStaff').checked;
-    const isActive = document.getElementById('addIsActive').checked;
-    
-    if (!username || !password) {
-        alert('Username and password are required');
-        return;
-    }
-    
-    $.post("{% url 'manage_users' %}", {
-        action: 'add',
-        username: username,
-        email: email,
-        password: password,
-        is_staff: isStaff,
-        is_active: isActive,
-        csrfmiddlewaretoken: "{{ csrf_token }}"
-    }, function(response) {
-        if (response.success) {
-            alert(response.message);
-            closeModal('addUserModal');
-            location.reload();
-        } else {
-            alert('Error: ' + response.error);
-        }
-    }).fail(function() {
-        alert('Network error. Please try again.');
-    });
-}
-
-function submitEditUser() {
-    const userId = document.getElementById('editUserId').value;
-    const email = document.getElementById('editEmail').value.trim();
-    const newPassword = document.getElementById('editNewPassword').value;
-    const isStaff = document.getElementById('editIsStaff').checked;
-    const isActive = document.getElementById('editIsActive').checked;
-    
-    $.post("{% url 'manage_users' %}", {
-        action: 'edit',
-        user_id: userId,
-        email: email,
-        new_password: newPassword,
-        is_staff: isStaff,
-        is_active: isActive,
-        csrfmiddlewaretoken: "{{ csrf_token }}"
-    }, function(response) {
-        if (response.success) {
-            alert(response.message);
-            closeModal('editUserModal');
-            location.reload();
-        } else {
-            alert('Error: ' + response.error);
-        }
-    }).fail(function() {
-        alert('Network error. Please try again.');
-    });
-}
-
-function deleteUser(userId, username) {
-    if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
-        return;
-    }
-    
-    $.post("{% url 'manage_users' %}", {
-        action: 'delete',
-        user_id: userId,
-        csrfmiddlewaretoken: "{{ csrf_token }}"
-    }, function(response) {
-        if (response.success) {
-            alert(response.message);
-            location.reload();
-        } else {
-            alert('Error: ' + response.error);
-        }
-    }).fail(function() {
-        alert('Network error. Please try again.');
-    });
-}
-
-function approveUser(userId, username) {
-    $.post("{% url 'manage_users' %}", {
-        action: 'approve',
-        user_id: userId,
-        csrfmiddlewaretoken: "{{ csrf_token }}"
-    }, function(response) {
-        if (response.success) {
-            alert(response.message);
-            location.reload();
-        } else {
-            alert('Error: ' + response.error);
-        }
-    }).fail(function() {
-        alert('Network error. Please try again.');
-    });
-}
-
-// ==================== STUDENT MANAGEMENT FUNCTIONS ====================
-// Setup college-program relationship for Add Student modal
-document.addEventListener('DOMContentLoaded', () => {
-    const addStudentCollege = document.getElementById('addStudentCollege');
-    if (addStudentCollege) {
-        addStudentCollege.addEventListener('change', () => {
-            updateProgramDropdown('addStudentCollege', 'addStudentProgram');
-        });
-    }
-    
-    const editStudentCollege = document.getElementById('editStudentCollege');
-    if (editStudentCollege) {
-        editStudentCollege.addEventListener('change', () => {
-            updateProgramDropdown('editStudentCollege', 'editStudentProgram');
-        });
-    }
-});
-
-function submitAddStudent() {
-    const studentId = document.getElementById('addStudentId').value.trim();
-    const studentName = document.getElementById('addStudentName').value.trim();
-    const gender = document.getElementById('addStudentGender').value;
-    const college = document.getElementById('addStudentCollege').value;
-    const program = document.getElementById('addStudentProgram').value;
-    const year = document.getElementById('addStudentYear').value;
-    const major = document.getElementById('addStudentMajor').value.trim();
-    
-    // Validation
-    if (!studentId || !studentName || !gender || !college || !program || !year || !major) {
-        alert('Please fill in all required fields');
-        return;
-    }
-    
-    // Submit via AJAX
-    $.post("{% url 'add_student' %}", {
-        student_id: studentId,
-        name: studentName,
-        sex: gender,
-        college: college,
-        program: program,
-        year: year,
-        major: major,
-        csrfmiddlewaretoken: "{{ csrf_token }}"
-    }, function(response) {
-        if (response.success) {
-            alert('Student added successfully!');
-            closeModal('addStudentModal');
-            // Clear form
-            document.getElementById('addStudentForm').reset();
-            // Reload page to show new student
-            location.reload();
-        } else {
-            alert('Error: ' + (response.error || 'Failed to add student'));
-        }
-    }).fail(function(xhr) {
-        if (xhr.responseJSON && xhr.responseJSON.error) {
-            alert('Error: ' + xhr.responseJSON.error);
-        } else {
-            alert('Network error. Please try again.');
-        }
-    });
-}
-
-function submitUploadStudents(event) {
-    const fileInput = document.getElementById('studentFile');
-    const file = fileInput.files[0];
-    const allowedExtensions = ['.pdf', '.csv', '.xlsx', '.xlsm'];
-    const allowedTypes = [
-        'application/pdf',
-        'text/csv',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ];
-    
-    if (!file) {
-        alert('Please select a file');
-        return;
-    }
-
-    const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    if (!allowedExtensions.includes(extension) && !allowedTypes.includes(file.type)) {
-        alert('Please select a PDF, CSV, or Excel (.xlsx) file');
-        return;
-    }
-    
-    if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('student_file', file);
-    formData.append('csrfmiddlewaretoken', "{{ csrf_token }}");
-    
-    const submitBtn = event.target;
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-    submitBtn.disabled = true;
-    
-    $.ajax({
-        url: "{% url 'upload_pdf' %}",
-        type: 'POST',
-        data: formData,
-        processData: false,
-        contentType: false,
-        success: function(response) {
-            if (response.success) {
-                alert('File uploaded and processed successfully!\n' + (response.message || ''));
-                closeModal('uploadStudentsModal');
-                document.getElementById('uploadStudentsForm').reset();
-                location.reload();
-            } else {
-                alert('Error: ' + (response.error || 'Failed to process file'));
-            }
-        },
-        error: function(xhr) {
-            if (xhr.responseJSON && xhr.responseJSON.error) {
-                alert('Error: ' + xhr.responseJSON.error);
-            } else {
-                alert('Network error. Please try again.');
-            }
-        },
-        complete: function() {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-        }
-    });
-}
-
-function getQrFilterParams() {
-    const params = new URLSearchParams();
-    const college = document.getElementById('qrCollege')?.value || '';
-    const program = document.getElementById('qrProgram')?.value || '';
-    const year = document.getElementById('qrYear')?.value || '';
-    const major = document.getElementById('qrMajor')?.value.trim() || '';
-    const gender = document.getElementById('qrGender')?.value || '';
-
-    if (college) params.append('college', college);
-    if (program) params.append('program', program);
-    if (year) params.append('year', year);
-    if (major) params.append('major', major);
-    if (gender) params.append('gender', gender);
-    return params;
-}
-
-function renderQrCodesGrid(qrList) {
-    const grid = document.getElementById('qrCodesGrid');
-    const empty = document.getElementById('qrCodesEmpty');
-    const count = document.getElementById('qrCodesCount');
-
-    if (!grid || !empty || !count) return;
-
-    const escapeHtml = (text) => {
-        const div = document.createElement('div');
-        div.textContent = text ?? '';
-        return div.innerHTML;
-    };
-
-    if (!qrList.length) {
-        grid.innerHTML = '';
-        empty.style.display = 'block';
-        count.textContent = '0 QR codes loaded';
-
-        const program = document.getElementById('qrProgram')?.value || '';
-        if (program) {
-            empty.textContent = `No students found for ${program}. Try "All Programs" or pick a program that exists in your student records (e.g. BSINT, BSCS).`;
-        } else {
-            empty.textContent = 'No students match the selected filters.';
-        }
-        return;
-    }
-
-    empty.style.display = 'none';
-    count.textContent = `${qrList.length} QR code${qrList.length === 1 ? '' : 's'} loaded`;
-    grid.innerHTML = qrList.map(item => `
-        <div class="qr-modal-card">
-            <strong>${escapeHtml(item.name)}</strong>
-            <small>${escapeHtml(item.student_id)}</small>
-            <small>${escapeHtml(item.college)} · ${escapeHtml(item.program)}</small>
-            <small>Year ${escapeHtml(String(item.year))} · ${escapeHtml(item.major || '-')}</small>
-            <img src="data:image/png;base64,${item.qr_img}" alt="QR for ${escapeHtml(item.student_id)}">
-        </div>
-    `).join('');
-}
-
-function openQrCodesModal() {
-    const college = document.getElementById('studentsCollege');
-    const program = document.getElementById('studentsProgram');
-    const year = document.getElementById('studentsYear');
-    const qrProgram = document.getElementById('qrProgram');
-
-    if (college) {
-        document.getElementById('qrCollege').value = college.value;
-    }
-    updateProgramDropdown('qrCollege', 'qrProgram');
-
-    if (program && qrProgram) {
-        qrProgram.value = program.value;
-        if (program.value && qrProgram.value !== program.value) {
-            qrProgram.value = '';
-        }
-    }
-    if (year) {
-        document.getElementById('qrYear').value = year.value;
-    }
-
-    document.getElementById('qrMajor').value = '';
-    document.getElementById('qrGender').value = '';
-    document.getElementById('qrCodesGrid').innerHTML = '';
-    document.getElementById('qrCodesEmpty').style.display = 'none';
-    document.getElementById('qrCodesLoading').style.display = 'none';
-    document.getElementById('qrCodesCount').textContent = 'Load QR codes using the filters above.';
-
-    openModal('qrCodesModal');
-    loadQrCodes();
-}
-
-function loadQrCodes() {
-    const loading = document.getElementById('qrCodesLoading');
-    const loadBtn = document.getElementById('qrLoadBtn');
-    const params = getQrFilterParams();
-
-    loading.style.display = 'block';
-    document.getElementById('qrCodesEmpty').style.display = 'none';
-    if (loadBtn) loadBtn.disabled = true;
-
-    fetch("{% url 'ajax_qr_codes' %}?" + params.toString(), {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to load QR codes');
-            }
-            renderQrCodesGrid(data.qr_list || []);
-        })
-        .catch(error => {
-            alert(error.message || 'Could not load QR codes.');
-            renderQrCodesGrid([]);
-        })
-        .finally(() => {
-            loading.style.display = 'none';
-            if (loadBtn) loadBtn.disabled = false;
-        });
-}
-
-function exportQrCodes(format) {
-    const params = getQrFilterParams();
-    params.append('format', format);
-
-    const pdfBtn = document.getElementById('qrExportPdfBtn');
-    const zipBtn = document.getElementById('qrExportZipBtn');
-    const activeBtn = format === 'zip' ? zipBtn : pdfBtn;
-    const originalText = activeBtn.innerHTML;
-
-    activeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
-    activeBtn.disabled = true;
-    if (pdfBtn && pdfBtn !== activeBtn) pdfBtn.disabled = true;
-    if (zipBtn && zipBtn !== activeBtn) zipBtn.disabled = true;
-
-    fetch("{% url 'export_qr_codes' %}?" + params.toString())
-        .then(response => {
-            if (!response.ok) {
-                return response.text().then(text => {
-                    throw new Error(text || 'Export failed');
-                });
-            }
-            const disposition = response.headers.get('Content-Disposition') || '';
-            const match = disposition.match(/filename="?([^"]+)"?/);
-            const filename = match ? match[1] : (`qrcodes.${format === 'zip' ? 'zip' : 'pdf'}`);
-            return response.blob().then(blob => ({ blob, filename }));
-        })
-        .then(({ blob, filename }) => {
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        })
-        .catch(error => {
-            alert(error.message || 'Could not export QR codes.');
-        })
-        .finally(() => {
-            activeBtn.innerHTML = originalText;
-            activeBtn.disabled = false;
-            if (pdfBtn) pdfBtn.disabled = false;
-            if (zipBtn) zipBtn.disabled = false;
-        });
-}
-
-function openExportStudentsModal() {
-    const college = document.getElementById('studentsCollege');
-    const program = document.getElementById('studentsProgram');
-    const year = document.getElementById('studentsYear');
-
-    if (college) {
-        document.getElementById('exportStudentsCollege').value = college.value;
-        updateProgramDropdown('exportStudentsCollege', 'exportStudentsProgram');
-    }
-    if (program) {
-        document.getElementById('exportStudentsProgram').value = program.value;
-    }
-    if (year) {
-        document.getElementById('exportStudentsYear').value = year.value;
-    }
-
-    openModal('exportStudentsModal');
-}
-
-function applyExportStudents() {
-    const params = new URLSearchParams();
-    const college = document.getElementById('exportStudentsCollege')?.value || '';
-    const program = document.getElementById('exportStudentsProgram')?.value || '';
-    const year = document.getElementById('exportStudentsYear')?.value || '';
-    const major = document.getElementById('exportStudentsMajor')?.value.trim() || '';
-    const gender = document.getElementById('exportStudentsGender')?.value || '';
-    const format = document.getElementById('exportStudentsFormat')?.value || 'csv';
-    const includeHeaders = document.getElementById('exportStudentsIncludeHeaders')?.checked;
-
-    if (college) params.append('college', college);
-    if (program) params.append('program', program);
-    if (year) params.append('year', year);
-    if (major) params.append('major', major);
-    if (gender) params.append('gender', gender);
-    params.append('format', format);
-    params.append('include_headers', includeHeaders ? '1' : '0');
-
-    const submitBtn = document.getElementById('exportStudentsSubmitBtn');
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
-    submitBtn.disabled = true;
-
-    fetch("{% url 'export_students' %}?" + params.toString())
-        .then(response => {
-            if (!response.ok) {
-                return response.text().then(text => {
-                    throw new Error(text || 'Export failed');
-                });
-            }
-            const disposition = response.headers.get('Content-Disposition') || '';
-            const match = disposition.match(/filename="?([^"]+)"?/);
-            const filename = match ? match[1] : ('students.' + format);
-            return response.blob().then(blob => ({ blob, filename }));
-        })
-        .then(({ blob, filename }) => {
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            closeModal('exportStudentsModal');
-        })
-        .catch(error => {
-            alert(error.message || 'Could not export students.');
-        })
-        .finally(() => {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-        });
-}
-
-function openEditStudentModal(id, studentId, name, sex, college, program, year, major) {
-    document.getElementById('editStudentDbId').value = id;
-    document.getElementById('editStudentId').value = studentId;
-    document.getElementById('editStudentName').value = name;
-    document.getElementById('editStudentGender').value = sex;
-    document.getElementById('editStudentCollege').value = college;
-    
-    // Update program dropdown and set value
-    updateProgramDropdown('editStudentCollege', 'editStudentProgram');
-    setTimeout(() => {
-        document.getElementById('editStudentProgram').value = program;
-    }, 100);
-    
-    document.getElementById('editStudentYear').value = year;
-    document.getElementById('editStudentMajor').value = major;
-    
-    document.getElementById('editStudentModal').classList.add('active');
-}
-
-function submitEditStudent() {
-    const id = document.getElementById('editStudentDbId').value;
-    const name = document.getElementById('editStudentName').value.trim();
-    const sex = document.getElementById('editStudentGender').value;
-    const college = document.getElementById('editStudentCollege').value;
-    const program = document.getElementById('editStudentProgram').value;
-    const year = document.getElementById('editStudentYear').value;
-    const major = document.getElementById('editStudentMajor').value.trim();
-    
-    if (!name || !sex || !college || !program || !year || !major) {
-        alert('Please fill in all required fields');
-        return;
-    }
-    
-    $.post("{% url 'edit_student' 0 %}".replace('/0/', '/' + id + '/'), {
-        name: name,
-        sex: sex,
-        college: college,
-        program: program,
-        year: year,
-        major: major,
-        csrfmiddlewaretoken: "{{ csrf_token }}"
-    }, function(response) {
-        if (response.success) {
-            alert('Student updated successfully!');
-            closeModal('editStudentModal');
-            location.reload();
-        } else {
-            alert('Error: ' + (response.error || 'Failed to update student'));
-        }
-    }).fail(function(xhr) {
-        if (xhr.responseJSON && xhr.responseJSON.error) {
-            alert('Error: ' + xhr.responseJSON.error);
-        } else {
-            alert('Network error. Please try again.');
-        }
-    });
-}
-</script>
-
+{{ college_programs|json_script:"college-programs-map" }}
+{{ student_programs_by_college|json_script:"student-programs-by-college" }}
+{{ app_urls|json_script:"app-urls" }}
+<script src="{% static 'qrapp/js/admin_dashboard.js' %}" defer></script>
+<script src="{% static 'qrapp/js/live_updates.js' %}" defer></script>
 {% endblock %}

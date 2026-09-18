@@ -35,9 +35,14 @@ DEBUG = os.getenv("DEBUG", "False").strip().lower() in ("1", "true", "yes", "on"
 
 _allowed_hosts = os.getenv(
     "ALLOWED_HOSTS",
-    "localhost,127.0.0.1",
+    "localhost,127.0.0.1,192.168.48.1",
 )
-ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts.split(",") if h.strip()]
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in _allowed_hosts.split(",")
+    if host.strip()
+]
 
 if os.getenv("RENDER_EXTERNAL_HOSTNAME"):
     ALLOWED_HOSTS.append(os.getenv("RENDER_EXTERNAL_HOSTNAME"))
@@ -69,6 +74,15 @@ INSTALLED_APPS = [
     'qrapp'
 ]
 
+# Dev-only HTTPS server (runserver_plus) so phone cameras work on the LAN —
+# getUserMedia requires a secure context (HTTPS or localhost).
+if os.getenv("ENABLE_HTTPS_DEV", "").strip().lower() in ("1", "true", "yes", "on"):
+    try:
+        import django_extensions  # noqa: F401
+        INSTALLED_APPS.append("django_extensions")
+    except ImportError:
+        pass
+
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
@@ -92,7 +106,64 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django_ratelimit.middleware.RatelimitMiddleware',
 ]
+
+# ---------------- CACHING ----------------
+# Shared cache when REDIS_URL is provided (recommended in production, e.g. a
+# Render Key Value instance); otherwise falls back to per-process local
+# memory, which is fine for local development.
+REDIS_URL = os.getenv("REDIS_URL", "")
+
+if REDIS_URL:
+    _CACHE_BACKEND = "django.core.cache.backends.redis.RedisCache"
+    _CACHE_LOCATION = REDIS_URL
+else:
+    _CACHE_BACKEND = "django.core.cache.backends.locmem.LocMemCache"
+    _CACHE_LOCATION = "qrapp-local"
+
+CACHES = {
+    "default": {
+        "BACKEND": _CACHE_BACKEND,
+        "LOCATION": _CACHE_LOCATION,
+        "KEY_PREFIX": "qr",
+        "TIMEOUT": 300,
+    },
+    # Dedicated, never-expiring cache for rate-limit counters so they don't
+    # compete with (or get evicted by) regular cached data.
+    "ratelimit": {
+        "BACKEND": _CACHE_BACKEND,
+        "LOCATION": _CACHE_LOCATION,
+        "KEY_PREFIX": "qr-rl",
+        "TIMEOUT": None,
+    },
+    # Short-lived cache for lookup AJAX endpoints (colleges/programs/majors/events).
+    "lookups": {
+        "BACKEND": _CACHE_BACKEND,
+        "LOCATION": _CACHE_LOCATION,
+        "KEY_PREFIX": "qr-lookups",
+        "TIMEOUT": 300,
+    },
+}
+
+# ---------------- RATE LIMITING (django-ratelimit) ----------------
+RATELIMIT_USE_CACHE = "ratelimit"
+RATELIMIT_VIEW = "qrapp.views.ratelimited_view"
+RATELIMIT_ENABLE = os.getenv("RATELIMIT_ENABLE", "True").strip().lower() in ("1", "true", "yes", "on")
+# Keep the app available if the cache backend hiccups: allow the request
+# instead of rejecting everyone while the cache is down.
+RATELIMIT_FAIL_OPEN = True
+
+# Behind proxies/load balancers (e.g. Render), set RATELIMIT_IP_META_KEY in the
+# environment (typically "HTTP_X_FORWARDED_FOR") so per-IP limits see the real
+# client IP instead of the proxy IP.
+_rate_ip_meta_key = os.getenv("RATELIMIT_IP_META_KEY", "")
+if _rate_ip_meta_key:
+    RATELIMIT_IP_META_KEY = _rate_ip_meta_key
+
+# Cache lifetimes (seconds), tunable via environment
+CALENDAR_CACHE_TIMEOUT = int(os.getenv("CALENDAR_CACHE_TIMEOUT", "60"))
+LOOKUPS_CACHE_TIMEOUT = int(os.getenv("LOOKUPS_CACHE_TIMEOUT", "60"))
 
 ROOT_URLCONF = 'qrproject.urls'
 

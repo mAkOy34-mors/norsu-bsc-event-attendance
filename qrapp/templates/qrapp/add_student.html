@@ -48,10 +48,19 @@
 
         <!-- Program (Dropdown) -->
         <div class="form-group">
-            <label for="id_Program">Program:</label>
-            {{ form.Program }}
-            {% if form.Program.errors %}
-                <div class="error">{{ form.Program.errors }}</div>
+            <label for="id_program">Program:</label>
+            {{ form.program }}
+            {% if form.program.errors %}
+                <div class="error">{{ form.program.errors }}</div>
+            {% endif %}
+        </div>
+
+        <!-- Major (Dropdown, depends on Program) -->
+        <div class="form-group">
+            <label for="id_major">Major:</label>
+            {{ form.major }}
+            {% if form.major.errors %}
+                <div class="error">{{ form.major.errors }}</div>
             {% endif %}
         </div>
 
@@ -61,15 +70,6 @@
             {{ form.year }}
             {% if form.year.errors %}
                 <div class="error">{{ form.year.errors }}</div>
-            {% endif %}
-        </div>
-
-        <!-- Major -->
-        <div class="form-group">
-            <label for="id_major">Major:</label>
-            {{ form.major }}
-            {% if form.major.errors %}
-                <div class="error">{{ form.major.errors }}</div>
             {% endif %}
         </div>
 

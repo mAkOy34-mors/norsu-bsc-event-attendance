@@ -10,27 +10,17 @@
         <p>Create sessions/events and set which one the scanner records attendance for</p>
     </div>
     <div class="header-actions">
-        <button class="btn btn-primary" onclick="openAddModal()">
+        <button class="btn btn-primary" data-action="call" data-fn="openAddModal">
             <i class="fas fa-plus"></i> Add Event
         </button>
     </div>
 </div>
 
-{% if messages %}
-<div class="messages-container mb-3">
-    {% for message in messages %}
-    <div class="alert alert-{{ message.tags }}">
-        {{ message }}
-        <button type="button" class="alert-close" onclick="this.parentElement.remove()">×</button>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
 
 <div class="card">
     <div class="card-header">
         <h3><i class="fas fa-calendar-alt"></i> Event List</h3>
-        <span class="badge badge-info" style="padding: 8px 16px; font-size: 14px;">
+        <span class="badge badge-info badge-lg">
             Total: {{ events.count }}
         </span>
     </div>
@@ -45,7 +35,7 @@
                         <th>Location</th>
                         <th>Status</th>
                         <th>Scans</th>
-                        <th>Actions</th>
+                        <th class="cell-actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -54,18 +44,18 @@
                         <td>
                             {% if event.picture %}
                             <img src="{{ event.picture.url }}" alt="{{ event.title }}"
-                                 style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid #e9ecef;">
+                                 class="event-thumb">
                             {% else %}
-                            <span style="color:#adb5bd;font-size:12px;">No photo</span>
+                            <span class="thumb-fallback">No photo</span>
                             {% endif %}
                         </td>
                         <td>
                             <strong>{{ event.title }}</strong>
                             {% if event.is_current %}
-                            <span class="badge badge-primary" style="margin-left:6px;">Current</span>
+                            <span class="badge badge-primary badge-current">Current</span>
                             {% endif %}
                             {% if event.description %}
-                            <div style="color:#6c757d;font-size:12px;margin-top:4px;">{{ event.description|truncatechars:80 }}</div>
+                            <div class="event-desc">{{ event.description|truncatechars:80 }}</div>
                             {% endif %}
                         </td>
                         <td>{{ event.display_window }}</td>
@@ -78,36 +68,27 @@
                             {% endif %}
                         </td>
                         <td class="scan-count" data-event-id="{{ event.id }}">—</td>
-                        <td>
+                        <td class="cell-actions">
+                            <div class="table-actions">
                             {% if not event.is_current %}
-                            <form method="POST" style="display:inline;">
+                            <form method="POST" class="form-inline">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="set_current">
                                 <input type="hidden" name="event_id" value="{{ event.id }}">
                                 <button type="submit" class="btn btn-success btn-sm" title="Use this event on scanner">
-                                    <i class="fas fa-play"></i> Set Current
+                                    <i class="fas fa-play"></i> Current
                                 </button>
                             </form>
                             {% endif %}
                             <button class="btn btn-warning btn-sm"
-                                    onclick="openEditModal(
-                                        '{{ event.id }}',
-                                        '{{ event.title|escapejs }}',
-                                        '{{ event.description|escapejs }}',
-                                        '{{ event.event_date|date:"Y-m-d" }}',
-                                        '{{ event.start_time|time:"H:i"|default:"" }}',
-                                        '{{ event.end_time|time:"H:i"|default:"" }}',
-                                        '{{ event.location|escapejs }}',
-                                        {{ event.is_active|yesno:"true,false" }},
-                                        {{ event.is_current|yesno:"true,false" }},
-                                        '{% if event.picture %}{{ event.picture.url|escapejs }}{% endif %}'
-                                    )">
+                                    data-action="call" data-fn="openEditModal" data-args="{{ event.id }}|{{ event.title|escapejs|urlencode }}|{{ event.description|escapejs|urlencode }}|{{ event.event_date|date:'Y-m-d' }}|{{ event.start_time|time:'H:i' }}|{{ event.end_time|time:'H:i' }}|{{ event.location|escapejs|urlencode }}|{{ event.is_active|yesno:'true,false' }}|{{ event.is_current|yesno:'true,false' }}|{% if event.picture %}{{ event.picture.url|escapejs|urlencode }}{% endif %}">
                                 <i class="fas fa-edit"></i> Edit
                             </button>
                             <button class="btn btn-danger btn-sm"
-                                    onclick="openDeleteModal('{{ event.id }}', '{{ event.title|escapejs }}')">
+                                    data-action="call" data-fn="openDeleteModal" data-args="{{ event.id }}|{{ event.title|escapejs|urlencode }}">
                                 <i class="fas fa-trash"></i> Delete
                             </button>
+                            </div>
                         </td>
                     </tr>
                     {% empty %}
@@ -126,7 +107,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-plus"></i> Add Event</h3>
-            <button class="modal-close" onclick="closeModal('addEventModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="addEventModal">&times;</button>
         </div>
         <form method="POST" enctype="multipart/form-data">
             {% csrf_token %}
@@ -145,13 +126,13 @@
                 <div class="form-group">
                     <label for="addPicture">Event Picture</label>
                     <input type="file" id="addPicture" name="picture" class="form-control" accept="image/*">
-                    <small style="color:#6c757d;">Shown on the scanner so staff know which attendance they are taking.</small>
+                    <small class="form-text">Shown on the scanner so staff know which attendance they are taking.</small>
                 </div>
                 <div class="form-group">
                     <label for="addDate">Event Date *</label>
                     <input type="date" id="addDate" name="event_date" class="form-control" value="{{ today }}" required>
                 </div>
-                <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group form-row-2">
                     <div>
                         <label for="addStart">Start Time</label>
                         <input type="time" id="addStart" name="start_time" class="form-control">
@@ -174,7 +155,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addEventModal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="addEventModal">Cancel</button>
                 <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Add Event</button>
             </div>
         </form>
@@ -186,7 +167,7 @@
     <div class="modal-content">
         <div class="modal-header">
             <h3><i class="fas fa-edit"></i> Edit Event</h3>
-            <button class="modal-close" onclick="closeModal('editEventModal')">&times;</button>
+            <button class="modal-close" data-action="close-modal" data-target="editEventModal">&times;</button>
         </div>
         <form method="POST" enctype="multipart/form-data">
             {% csrf_token %}
@@ -203,12 +184,11 @@
                 </div>
                 <div class="form-group">
                     <label for="editPicture">Event Picture</label>
-                    <div id="editPicturePreviewWrap" style="display:none;margin-bottom:8px;">
-                        <img id="editPicturePreview" src="" alt="Current picture"
-                             style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid #e9ecef;">
+                    <div id="editPicturePreviewWrap" class="is-hidden">
+                        <img id="editPicturePreview" src="" alt="Current picture" class="event-thumb-lg">
                     </div>
                     <input type="file" id="editPicture" name="picture" class="form-control" accept="image/*">
-                    <label style="display:block;margin-top:8px;">
+                    <label class="label-block">
                         <input type="checkbox" id="editClearPicture" name="clear_picture">
                         Remove current picture
                     </label>
@@ -217,7 +197,7 @@
                     <label for="editDate">Event Date *</label>
                     <input type="date" id="editDate" name="event_date" class="form-control" required>
                 </div>
-                <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group form-row-2">
                     <div>
                         <label for="editStart">Start Time</label>
                         <input type="time" id="editStart" name="start_time" class="form-control">
@@ -239,7 +219,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editEventModal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="editEventModal">Cancel</button>
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Changes</button>
             </div>
         </form>
@@ -249,27 +229,26 @@
 <!-- Delete Modal -->
 <div id="deleteEventModal" class="modal">
     <div class="modal-content modal-sm">
-        <div class="modal-header">
-            <h3><i class="fas fa-exclamation-triangle" style="color:#dc3545;"></i> Delete Event</h3>
-            <button type="button" class="modal-close" onclick="closeModal('deleteEventModal')">&times;</button>
+        <div class="modal-header">                <h3 class="modal-title-danger"><i class="fas fa-exclamation-triangle"></i> Delete Event</h3>
+            <button type="button" class="modal-close" data-action="close-modal" data-target="deleteEventModal">&times;</button>
         </div>
         <form method="POST">
             {% csrf_token %}
             <input type="hidden" name="action" value="delete">
             <input type="hidden" id="deleteEventId" name="event_id">
-            <div class="modal-body" style="text-align:center;padding:28px 24px;">
-                <div style="width:56px;height:56px;margin:0 auto 16px;border-radius:50%;background:rgba(220,53,69,0.1);display:flex;align-items:center;justify-content:center;">
-                    <i class="fas fa-trash" style="font-size:22px;color:#dc3545;"></i>
+            <div class="modal-body modal-body-center">
+                <div class="modal-icon-circle modal-icon-danger">
+                    <i class="fas fa-trash"></i>
                 </div>
-                <p style="font-size:16px;margin:0 0 8px;color:#212529;line-height:1.4;">
+                <p class="modal-lead">
                     Delete <strong id="deleteEventTitle"></strong>?
                 </p>
-                <p style="color:#6c757d;font-size:13px;margin:0;line-height:1.45;">
+                <p class="modal-note">
                     Related attendance scans will be unlinked from this event (not deleted).
                 </p>
             </div>
-            <div class="modal-footer" style="justify-content:center;">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('deleteEventModal')">
+            <div class="modal-footer modal-footer-center">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-target="deleteEventModal">
                     <i class="fas fa-times"></i> Cancel
                 </button>
                 <button type="submit" class="btn btn-danger">
@@ -282,57 +261,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-const eventStats = {{ event_stats|safe }};
-
-function openModal(id) {
-    document.getElementById(id).classList.add('active');
-}
-function closeModal(id) {
-    document.getElementById(id).classList.remove('active');
-}
-function openAddModal() {
-    openModal('addEventModal');
-}
-function openEditModal(id, title, description, date, start, end, location, isActive, isCurrent, pictureUrl) {
-    document.getElementById('editEventId').value = id;
-    document.getElementById('editTitle').value = title;
-    document.getElementById('editDescription').value = description || '';
-    document.getElementById('editDate').value = date;
-    document.getElementById('editStart').value = start || '';
-    document.getElementById('editEnd').value = end || '';
-    document.getElementById('editLocation').value = location || '';
-    document.getElementById('editIsActive').checked = !!isActive;
-    document.getElementById('editIsCurrent').checked = !!isCurrent;
-    document.getElementById('editPicture').value = '';
-    document.getElementById('editClearPicture').checked = false;
-    const previewWrap = document.getElementById('editPicturePreviewWrap');
-    const preview = document.getElementById('editPicturePreview');
-    if (pictureUrl) {
-        preview.src = pictureUrl;
-        previewWrap.style.display = 'block';
-    } else {
-        preview.src = '';
-        previewWrap.style.display = 'none';
-    }
-    openModal('editEventModal');
-}
-function openDeleteModal(id, title) {
-    document.getElementById('deleteEventId').value = id;
-    document.getElementById('deleteEventTitle').textContent = title;
-    openModal('deleteEventModal');
-}
-
-document.querySelectorAll('.scan-count').forEach(el => {
-    const id = el.dataset.eventId;
-    el.textContent = eventStats[id] ?? 0;
-});
-
-window.addEventListener('click', (e) => {
-    ['addEventModal', 'editEventModal', 'deleteEventModal'].forEach(id => {
-        const modal = document.getElementById(id);
-        if (e.target === modal) closeModal(id);
-    });
-});
-</script>
+{{ event_stats|json_script:"event-stats" }}
+<script src="{% static 'qrapp/js/manage_events.js' %}" defer></script>
 {% endblock %}

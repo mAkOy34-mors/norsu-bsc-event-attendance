@@ -1,0 +1,23 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Too Many Requests - QR Attendance System</title>
+    <link rel="stylesheet" href="{% static 'qrapp/css/ratelimited.css' %}">
+</head>
+<body>
+    <div class="rl-card">
+        <div class="rl-icon">&#9888;&#65039;</div>
+        <div class="rl-code">429</div>
+        <h2>Too Many Requests</h2>
+        <p>
+            You've sent too many requests in a short time.
+            Please wait a minute and try again.
+        </p>
+        <a href="/" class="rl-btn">Back to Home</a>
+        <p class="rl-footer">QR Attendance System &copy; 2026</p>
+    </div>
+</body>
+</html>

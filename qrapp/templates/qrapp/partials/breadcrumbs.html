@@ -1,0 +1,27 @@
+{% with url_name=request.resolver_match.url_name %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <ol>
+        {% if url_name != 'admin_dashboard' %}
+        <li>
+            <a href="{% url 'admin_dashboard' %}"><i class="fas fa-home"></i> Home</a>
+        </li>
+        {% endif %}
+        {% if url_name == 'admin_dashboard' %}
+        <li id="breadcrumbCurrent" aria-current="page">{{ section_label|default:"Dashboard" }}</li>
+        {% elif url_name == 'manage_events' %}
+        <li aria-current="page">Events</li>
+        {% elif url_name == 'manage_colleges' %}
+        <li aria-current="page">Manage Colleges</li>
+        {% elif url_name == 'manage_programs' %}
+        <li><a href="{% url 'manage_colleges' %}">Manage Colleges</a></li>
+        <li aria-current="page">Programs</li>
+        {% elif url_name == 'scanner' %}
+        <li aria-current="page">Scanner</li>
+        {% elif url_name == 'attendance_records' %}
+        <li aria-current="page">Attendance Records</li>
+        {% else %}
+        <li aria-current="page">{{ request.resolver_match.view_name|title }}</li>
+        {% endif %}
+    </ol>
+</nav>
+{% endwith %}

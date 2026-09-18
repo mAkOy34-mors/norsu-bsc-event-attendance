@@ -1,3 +1,4 @@
+<!-- scanner.html -->
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
@@ -5,1471 +6,177 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QR Scanner</title>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{% static 'qrapp/css/scanner.css' %}">
+
+    <!-- Prefetch the dashboard so it's already cached when clicked -->
+    {% if user.is_staff %}
+    <link rel="prefetch" href="{% url 'admin_dashboard' %}">
+    {% endif %}
+
+    <!-- QR library served locally so devices on the LAN without internet can still scan -->
+    <script src="{% static 'qrapp/js/html5-qrcode.min.js' %}" defer></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="{% static 'qrapp/js/offline_sync.js' %}"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-/* -------------------------
-   Theme variables
-   ------------------------- */
-:root{
-  --bg-start: #667eea;
-  --bg-end:   #764ba2;
-  --card-bg: rgba(255,255,255,0.98);
-  --muted: #495057;
-  --accent: #4b6cb7;
-  --glass-weak: rgba(255,255,255,0.06);
-  --glass-strong: rgba(255,255,255,0.12);
-  --glass-border: rgba(255,255,255,0.14);
-  --shadow-1: 0 10px 30px rgba(0,0,0,0.12);
-}
-
-/* -------------------------
-   Reset / base
-   ------------------------- */
-*{box-sizing:border-box; margin:0; padding:0}
-html,body{height:100%}
-body{
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg,var(--bg-start) 0%,var(--bg-end) 100%);
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
-  color:#222;
-  padding:20px;
-  display:flex;
-  justify-content:center;
-  align-items:flex-start;
-  min-height:100vh;
-}
-
-/* -------------------------
-   Container / Header
-   ------------------------- */
-.container{
-  width:100%;
-  max-width:920px;
-  background: var(--card-bg);
-  border-radius:16px;
-  box-shadow: var(--shadow-1);
-  overflow:hidden;
-  margin-top:18px;
-}
-
-header{
-  background: linear-gradient(90deg, rgba(75,108,183,1) 0%, rgba(58,89,153,1) 100%);
-  color:#fff;
-  padding:18px 22px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-}
-.header-content{display:flex; align-items:center; gap:16px; width:100%}
-h1{font-size:20px; font-weight:600; display:flex; gap:10px; align-items:center; flex:1}
-.header-actions{display:flex; align-items:center; gap:10px; flex-shrink:0}
-.sync-badge{
-  display:none;
-  align-items:center;
-  gap:8px;
-  padding:8px 12px;
-  border-radius:999px;
-  font-size:12px;
-  font-weight:700;
-  border:1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.14);
-  color:#fff;
-  white-space:nowrap;
-  cursor:pointer;
-}
-.sync-badge.is-visible{ display:inline-flex; }
-.sync-badge.is-offline{
-  background: rgba(231,76,60,0.28);
-  border-color: rgba(231,76,60,0.45);
-}
-.sync-badge.is-pending{
-  background: rgba(243,156,18,0.28);
-  border-color: rgba(243,156,18,0.5);
-}
-.sync-badge .sync-count{
-  min-width:18px;
-  height:18px;
-  border-radius:999px;
-  background:#fff;
-  color:#3a5999;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  font-size:11px;
-  padding:0 5px;
-}
-.logout-btn{
-  background: rgba(255,255,255,0.12);
-  color: rgb(79, 3, 3);
-  font-weight:bold;
-  padding:9px 16px;
-  border-radius:999px;
-  text-decoration:none;
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  border:1px solid rgba(255,255,255,0.06);
-  transition:all .18s ease;
-}
-.logout-btn:hover{transform:translateY(-2px); background: rgba(255,255,255,0.18)}
-
-/* -------------------------
-   Main content & scanner
-   ------------------------- */
-.main-content{ padding:28px; display:flex; flex-direction:column; align-items:center; gap:18px }
-.scanner-container{ width:100%; display:flex; flex-direction:column; align-items:center; gap:12px }
-#reader{
-  width:100%;
-  max-width:520px;
-  height:auto;
-  background: linear-gradient(180deg, rgba(248,249,250,1), rgba(244,246,247,1));
-  border-radius:12px;
-  overflow:hidden;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-  position:relative;
-}
-
-/* mirror the camera preview if video exists inside #reader */
-#reader video{ transform: scaleX(-1); width:100%; height:100%; object-fit:cover; display:block; }
-
-/* scanner overlay / scan line */
-.scan-area{ position:relative; width:100%;}
-.scanner-overlay{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-.scan-line{
-  position:absolute;
-  width:80%;
-  height:3px;
-  background: linear-gradient(90deg, rgba(75,108,183,0.95), rgba(46,204,113,0.95));
-  box-shadow:0 6px 26px rgba(75,108,183,0.12);
-  animation:scan 2s linear infinite;
-  border-radius:2px;
-}
-@keyframes scan{0%{top:10%}50%{top:90%}100%{top:10%}}
-
-.scanner-icon{ font-size:48px; color:var(--accent) }
-.scanner-text{ color:var(--muted); font-size:15px; font-weight:500; text-align:center }
-
-.event-attendance-card{
-  width:100%;
-  max-width:520px;
-  display:flex;
-  align-items:center;
-  gap:14px;
-  padding:12px 14px;
-  border-radius:12px;
-  background:linear-gradient(180deg,#f7f9fc,#eef2f8);
-  border:1px solid rgba(75,108,183,0.14);
-}
-.event-attendance-photo{
-  width:72px;
-  height:72px;
-  border-radius:10px;
-  object-fit:cover;
-  background:#dfe6f1;
-  flex-shrink:0;
-  display:none;
-  border:1px solid rgba(0,0,0,0.06);
-}
-.event-attendance-photo.is-visible{ display:block; }
-.event-attendance-placeholder{
-  width:72px;
-  height:72px;
-  border-radius:10px;
-  flex-shrink:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:#dfe6f1;
-  color:#7b8798;
-  font-size:22px;
-}
-.event-attendance-placeholder.is-hidden{ display:none; }
-.event-attendance-meta{ min-width:0; flex:1; }
-.event-attendance-label{
-  font-size:11px;
-  text-transform:uppercase;
-  letter-spacing:.04em;
-  color:#6c757d;
-  font-weight:700;
-  margin-bottom:2px;
-}
-.event-attendance-title{
-  font-size:16px;
-  font-weight:700;
-  color:#243447;
-  line-height:1.25;
-  word-break:break-word;
-}
-.event-attendance-sub{
-  font-size:13px;
-  color:var(--muted);
-  margin-top:2px;
-}
-.event-attendance-desc{
-  font-size:13px;
-  color:#5a6572;
-  margin-top:6px;
-  line-height:1.35;
-  display:-webkit-box;
-  -webkit-line-clamp:2;
-  -webkit-box-orient:vertical;
-  overflow:hidden;
-}
-.event-attendance-desc:empty{ display:none; }
-#eventSelect.event-select-required{
-  border-color:#e74c3c !important;
-  box-shadow:0 0 0 3px rgba(231,76,60,0.18);
-  animation: eventPulse .35s ease 2;
-}
-@keyframes eventPulse{
-  0%,100%{ transform:scale(1); }
-  50%{ transform:scale(1.01); }
-}
-
-/* Mode + camera switcher */
-.scan-mode-switcher{
-  width:100%;
-  max-width:520px;
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-.mode-toggle{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  background:#eef1f6;
-  border-radius:12px;
-  padding:4px;
-  gap:4px;
-}
-.mode-btn{
-  border:none;
-  background:transparent;
-  color:var(--muted);
-  padding:12px 14px;
-  border-radius:10px;
-  font-weight:600;
-  font-size:14px;
-  cursor:pointer;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  transition:all .18s ease;
-}
-.mode-btn.active{
-  background:#fff;
-  color:var(--accent);
-  box-shadow:0 2px 10px rgba(75,108,183,0.18);
-}
-.camera-controls{
-  display:flex;
-  gap:8px;
-  align-items:center;
-}
-.camera-controls select{
-  flex:1;
-  padding:11px 12px;
-  border:1px solid #d9dee7;
-  border-radius:10px;
-  font-size:14px;
-  background:#fff;
-  color:#222;
-}
-.camera-controls button,
-#startDeviceScanBtn{
-  border:none;
-  background:var(--accent);
-  color:#fff;
-  padding:11px 14px;
-  border-radius:10px;
-  font-weight:600;
-  font-size:13px;
-  cursor:pointer;
-  white-space:nowrap;
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-}
-.camera-controls button:hover,
-#startDeviceScanBtn:hover{ filter:brightness(1.05) }
-.camera-controls button:disabled{
-  opacity:0.55;
-  cursor:not-allowed;
-}
-.device-scanner-panel{
-  width:100%;
-  max-width:520px;
-  display:none;
-  flex-direction:column;
-  gap:12px;
-  background:linear-gradient(180deg,#f8f9fa,#f1f4f8);
-  border:1px dashed #c5cdd8;
-  border-radius:12px;
-  padding:22px 18px;
-  text-align:center;
-}
-.device-scanner-panel.active{ display:flex }
-.device-scanner-panel .device-icon{
-  font-size:42px;
-  color:var(--accent);
-}
-.device-scanner-panel input{
-  width:100%;
-  padding:14px 16px;
-  border:2px solid #cfd6e1;
-  border-radius:10px;
-  font-size:16px;
-  text-align:center;
-  outline:none;
-}
-.device-scanner-panel input:focus{
-  border-color:var(--accent);
-  box-shadow:0 0 0 3px rgba(75,108,183,0.15);
-}
-.device-hint{
-  font-size:13px;
-  color:var(--muted);
-  line-height:1.5;
-}
-
-/* -------------------------
-   Result box
-   ------------------------- */
-#result{
-  width:100%;
-  max-width:520px;
-  min-height:64px;
-  padding:14px 16px;
-  border-radius:12px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  text-align:center;
-  font-size:15px;
-  transition:all .22s ease;
-  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,249,250,0.98));
-  border:1px solid rgba(0,0,0,0.04);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.04);
-}
-#result.success{ background: linear-gradient(180deg,#e9f7ef,#e6f4ee); color:#126033; border:1px solid rgba(19,140,79,0.12) }
-#result.error{ background: linear-gradient(180deg,#fff0f0,#fff2f2); color:#7f1d1d; border:1px solid rgba(192,57,43,0.08) }
-#result.info{ background: linear-gradient(180deg,#f3f6ff,#eef3ff); color:#153b66; border:1px solid rgba(41,128,185,0.08) }
-
-/* -------------------------
-   Manual input form
-   ------------------------- */
-.manual-input{
-  width:100%;
-  max-width:520px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,250,250,0.98));
-  border-radius:12px;
-  padding:14px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.04);
-}
-.manual-input h3{ color:var(--accent); margin-bottom:10px; display:flex; gap:8px; align-items:center }
-.input-group{
-  display:flex;
-  gap:10px;
-  flex-wrap:nowrap;
-  overflow-x:auto;
-  overflow-y:visible;
-  -webkit-overflow-scrolling:touch;
-  padding-bottom:6px; /* gives the scrollbar thumb room */
-}
-
-.input-group::-webkit-scrollbar{
-  height: 10px;
-}
-
-.input-group::-webkit-scrollbar-thumb{
-  background: rgba(67,97,238,0.35);
-  border-radius: 999px;
-}
-
-.input-group::-webkit-scrollbar-track{
-  background: rgba(0,0,0,0.05);
-  border-radius: 999px;
-}
-
-.input-group input{
-  flex:0 0 auto;
-  padding:11px 14px;
-  border-radius:8px;
-  border:1px solid #ddd;
-  font-size:15px;
-  outline:none; transition:box-shadow .14s ease, border-color .14s ease;
-}
-.input-group input:focus{ box-shadow: 0 6px 18px rgba(75,108,183,0.06); border-color:var(--accent) }
-
-.input-group input[type="text"]{
-  min-width: 185px;
-}
-
-.input-group input[type="time"]{
-  min-width: 135px;
-}
-
-.input-group select{
-  flex:0 0 auto;
-  min-width: 140px;
-  padding:11px 14px;
-  border-radius:8px;
-  border:1px solid #ddd;
-  font-size:15px;
-  background:#fff;
-}
-
-.input-group button{
-  flex:0 0 auto;
-  padding:10px 14px; border-radius:8px; border:none; background:var(--accent); color:#fff; cursor:pointer;
-  display:inline-flex; align-items:center; gap:8px;
-}
-.input-group button:hover{ filter:brightness(.97); transform:translateY(-1px) }
-
-/* -------------------------
-   Instructions card
-   ------------------------- */
-.instructions{
-  width:100%;
-  max-width:520px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(250,250,250,0.97));
-  border-radius:12px;
-  padding:14px 16px;
-  margin-bottom:18px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.04);
-}
-.instructions h3{ color:var(--accent); display:flex; gap:8px; align-items:center; margin-bottom:10px }
-.instructions ol{ padding-left:18px; line-height:1.6; color:var(--muted) }
-
-/* -------------------------
-   Status indicator
-   ------------------------- */
-.status-indicator{ display:flex; gap:8px; align-items:center; color:var(--muted); font-size:14px }
-.status-dot{ width:10px; height:10px; border-radius:50%; background:#28a745; box-shadow:0 4px 8px rgba(40,167,69,0.12) }
-.scanning .status-dot{ background:#ffc107; animation:pulse 1.5s infinite }
-@keyframes pulse{ 0%{opacity:1}50%{opacity:.45}100%{opacity:1} }
-
-/* -------------------------
-   Notification center
-   ------------------------- */
-.notification-center{
-  position:fixed;
-  top:18px;
-  left:50%;
-  transform:translateX(-50%);
-  z-index:2000;
-  width:min(420px, calc(100% - 24px));
-  display:flex;
-  flex-direction:column;
-  align-items:stretch;
-  gap:10px;
-  pointer-events:none;
-}
-
-.notification{
-  pointer-events:auto;
-  width:100%;
-  display:flex;
-  gap:12px;
-  align-items:flex-start;
-  padding:14px 14px 14px 12px;
-  border-radius:14px;
-  background:rgba(255,255,255,0.96);
-  border:1px solid rgba(0,0,0,0.06);
-  box-shadow:0 12px 32px rgba(6,10,20,0.18);
-  color:#1f2937;
-  font-size:14px;
-  font-weight:500;
-  line-height:1.35;
-  transition:transform .22s cubic-bezier(.2,.9,.3,1), opacity .22s ease;
-  transform-origin:top center;
-  animation:slideIn 420ms cubic-bezier(.22,.61,.36,1) both;
-  position:relative;
-  overflow:hidden;
-}
-
-.notification-icon{
-  flex-shrink:0;
-  font-size:16px;
-  width:38px;
-  height:38px;
-  border-radius:10px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:rgba(0,0,0,0.05);
-  color:inherit;
-}
-
-.notification-content{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  min-width:0;
-  flex:1;
-}
-.notification-title{
-  font-weight:700;
-  font-size:12px;
-  letter-spacing:.04em;
-  text-transform:uppercase;
-}
-.notification-message{
-  font-size:14px;
-  font-weight:500;
-  opacity:.95;
-  line-height:1.4;
-  color:inherit;
-  word-break:break-word;
-}
-.notification-time{
-  font-size:12px;
-  opacity:.75;
-  display:flex;
-  gap:6px;
-  align-items:center;
-  margin-top:2px;
-}
-.notification-close{
-  margin-left:4px;
-  background:rgba(0,0,0,0.04);
-  border:none;
-  width:32px;
-  height:32px;
-  border-radius:8px;
-  cursor:pointer;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:inherit;
-  flex-shrink:0;
-  transition:transform .12s ease, background .12s ease;
-}
-.notification-close:hover{
-  transform:scale(1.05);
-  background:rgba(0,0,0,0.08);
-}
-
-.notification.in{
-  background:linear-gradient(180deg, rgba(46,204,113,0.16), rgba(255,255,255,0.96));
-  border-left:5px solid #27ae60;
-  color:#052f17;
-}
-.notification.out{
-  background:linear-gradient(180deg, rgba(52,152,219,0.14), rgba(255,255,255,0.96));
-  border-left:5px solid #2980b9;
-  color:#042b3a;
-}
-.notification.error{
-  background:linear-gradient(180deg, rgba(231,76,60,0.14), rgba(255,255,255,0.96));
-  border-left:5px solid #c0392b;
-  color:#3b0b08;
-}
-.notification.warning{
-  background:linear-gradient(180deg, rgba(241,196,15,0.16), rgba(255,255,255,0.96));
-  border-left:5px solid #f39c12;
-  color:#3b2b00;
-}
-.notification.info{
-  background:linear-gradient(180deg, rgba(52,152,219,0.12), rgba(255,255,255,0.96));
-  border-left:5px solid #3498db;
-  color:#042b3a;
-}
-
-.notification.hiding{ animation:slideOut 380ms cubic-bezier(.55,.06,.68,.19) both; }
-
-/* -------------------------
-   Animations
-   ------------------------- */
-@keyframes slideIn{
-  from{ transform:translateY(-18px) scale(.985); opacity:0 }
-  to  { transform:translateY(0) scale(1); opacity:1 }
-}
-@keyframes slideOut{
-  from{ transform:translateY(0) scale(1); opacity:1 }
-  to  { transform:translateY(-18px) scale(.98); opacity:0 }
-}
-
-/* -------------------------
-   Horizontal scroll helper
-   ------------------------- */
-.scanner-x-scroll{
-  width:100%;
-  overflow-x:auto;
-  overflow-y:visible;
-  -webkit-overflow-scrolling:touch;
-  padding-bottom: 6px; /* helps the scrollbar grab area */
-}
-
-.scanner-x-scroll::-webkit-scrollbar{
-  height: 10px;
-}
-
-.scanner-x-scroll::-webkit-scrollbar-thumb{
-  background: rgba(255,255,255,0.35);
-  border-radius: 999px;
-}
-
-.scanner-x-scroll::-webkit-scrollbar-track{
-  background: rgba(0,0,0,0.06);
-  border-radius: 999px;
-}
-
-/* -------------------------
-   Responsive tweaks
-   ------------------------- */
-@media (max-width:768px){
-  header{ padding:12px 14px }
-  .main-content{ padding:18px }
-  .notification-center{ width:calc(100% - 24px); top:12px }
-  .notification{ padding:12px; border-radius:12px }
-  .notification-icon{ width:34px;height:34px; font-size:15px; border-radius:8px }
-  .input-group button{ padding:9px 12px }
-}
-
-@media (max-width:480px){
-  body{ padding:12px 12px; }
-}
-</style>
-
 </head>
 <body>
     <!-- Notification Center -->
     <div class="notification-center" id="notificationCenter"></div>
 
     <div class="scanner-x-scroll">
-      <div class="container">
-        <header>
-            <div class="header-content">
-                <h1><i class="fas fa-qrcode"></i> QR Code Scanner</h1>
-                <div class="header-actions">
-                    <button type="button" class="sync-badge" id="offlineSyncBadge" title="Tap to sync pending scans" aria-live="polite">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                        <span id="offlineSyncLabel">Offline</span>
-                        <span class="sync-count" id="offlineSyncCount">0</span>
-                    </button>
-                    <a href="{% url 'logout' %}" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+        <div class="container">
+            <header>
+                <div class="header-content">
+                    <div class="header-icon-badge"><i class="fas fa-qrcode"></i></div>
+                    <div class="header-titles">
+                        <h1>QR Scanner</h1>
+                        <div class="header-subtitle">Attendance check-in &amp; check-out</div>
+                    </div>
+                    <div class="header-actions">
+                        {% if user.is_staff %}
+                        <a href="{% url 'admin_dashboard' %}"
+                           class="logout-btn logout-btn-secondary"
+                           id="dashboardBtn"
+                           rel="prefetch noopener">
+                           <i class="fas fa-arrow-left"></i> Dashboard
+                        </a>
+                        {% endif %}
+                        <button type="button" class="sync-badge" id="offlineSyncBadge" title="Tap to sync pending scans" aria-live="polite">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <span id="offlineSyncLabel">Offline</span>
+                            <span class="sync-count" id="offlineSyncCount">0</span>
+                        </button>
+                        <a href="{% url 'logout' %}" class="logout-btn" id="logoutBtn">
+                            <i class="fas fa-sign-out-alt"></i> Logout
+                        </a>
+                    </div>
                 </div>
-            </div>
-        </header>
+            </header>
 
-        <div class="main-content">
-            <div class="scanner-container">
-                <div class="scan-mode-switcher">
-                    <div class="mode-toggle" role="tablist" aria-label="Scan mode">
-                        <button type="button" class="mode-btn active" id="modeCameraBtn" data-mode="camera">
-                            <i class="fas fa-camera"></i> Camera
-                        </button>
-                        <button type="button" class="mode-btn" id="modeDeviceBtn" data-mode="device">
-                            <i class="fas fa-barcode"></i> Scanner Device
-                        </button>
-                    </div>
-
-                    <div class="camera-controls" id="cameraControls">
-                        <select id="cameraSelect" aria-label="Select camera">
-                            <option value="">Loading cameras...</option>
-                        </select>
-                        <button type="button" id="switchCameraBtn" title="Switch camera">
-                            <i class="fas fa-sync-alt"></i> Switch
-                        </button>
-                    </div>
-
-                    <div class="event-attendance-card" id="eventAttendanceCard">
-                        <img id="eventPicture" class="event-attendance-photo" alt="Selected event">
-                        <div class="event-attendance-placeholder" id="eventPicturePlaceholder">
-                            <i class="fas fa-calendar-alt"></i>
+            <div class="main-content">
+                <!-- LEFT COLUMN : scanner -->
+                <div class="scanner-container">
+                    <div class="scan-mode-switcher">
+                        <div class="mode-toggle" role="tablist" aria-label="Scan mode">
+                            <button type="button" class="mode-btn active" id="modeCameraBtn" data-mode="camera">
+                                <i class="fas fa-camera"></i> Camera
+                            </button>
+                            <button type="button" class="mode-btn" id="modeDeviceBtn" data-mode="device">
+                                <i class="fas fa-barcode"></i> Scanner device
+                            </button>
                         </div>
-                        <div class="event-attendance-meta">
-                            <div class="event-attendance-label">Taking attendance for</div>
-                            <div class="event-attendance-title" id="eventPreviewTitle">Select an event</div>
-                            <div class="event-attendance-sub" id="eventPreviewSub">Required before scanning</div>
-                            <div class="event-attendance-desc" id="eventPreviewDesc"></div>
+
+                        <div class="camera-controls" id="cameraControls">
+                            <select id="cameraSelect" aria-label="Select camera">
+                                <option value="">Loading cameras...</option>
+                            </select>
+                            <button type="button" id="switchCameraBtn" title="Switch camera">
+                                <i class="fas fa-sync-alt"></i> Switch
+                            </button>
+                        </div>
+
+                        <!-- Event attendance preview -->
+                        <div class="event-attendance-card" id="eventAttendanceCard">
+                            <img id="eventPicture" class="event-attendance-photo" alt="Selected event">
+                            <div class="event-attendance-placeholder" id="eventPicturePlaceholder">
+                                <i class="fas fa-calendar-alt"></i>
+                            </div>
+                            <div class="event-attendance-meta">
+                                <div class="event-attendance-label">Taking attendance for</div>
+                                <div class="event-attendance-title" id="eventPreviewTitle">Select an event</div>
+                                <div class="event-attendance-sub" id="eventPreviewSub">Required before scanning</div>
+                                <div class="event-attendance-desc" id="eventPreviewDesc"></div>
+                            </div>
+                        </div>
+
+                        <div class="camera-controls" id="eventControls">
+                            <select id="eventSelect" aria-label="Select event" required>
+                                <option value="" data-picture="" data-title="" data-sub="" data-description="">Select an event *</option>
+                                {% for event in events %}
+                                <option value="{{ event.id }}"
+                                    data-picture="{% if event.picture %}{{ event.picture.url }}{% endif %}"
+                                    data-title="{{ event.title }}"
+                                    data-sub="{{ event.display_window }}"
+                                    data-description="{{ event.description }}"
+                                    data-date="{{ event.event_date|date:'Y-m-d' }}"
+                                    {% if current_event and current_event.id == event.id %}selected{% endif %}>
+                                    {% if event.is_current %}★ {% endif %}{{ event.title }} — {{ event.event_date|date:"M d, Y" }}
+                                </option>
+                                {% empty %}
+                                <option value="" disabled>No active events — create one in Manage Events</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
 
-                    <div class="camera-controls" id="eventControls" style="margin-top:0;">
-                        <select id="eventSelect" aria-label="Select event" required>
-                            <option value="" data-picture="" data-title="" data-sub="" data-description="">Select an event *</option>
-                            {% for event in events %}
-                            <option value="{{ event.id }}"
-                                data-picture="{% if event.picture %}{{ event.picture.url }}{% endif %}"
-                                data-title="{{ event.title }}"
-                                data-sub="{{ event.display_window }}"
-                                data-description="{{ event.description }}"
-                                {% if current_event and current_event.id == event.id %}selected{% endif %}>
-                                {% if event.is_current %}★ {% endif %}{{ event.title }} — {{ event.event_date|date:"M d, Y" }}
-                            </option>
-                            {% empty %}
-                            <option value="" disabled>No active events — create one in Manage Events</option>
-                            {% endfor %}
-                        </select>
+                    <div id="reader">Camera preview</div>
+
+                    <div class="device-scanner-panel" id="deviceScannerPanel">
+                        <div class="device-icon"><i class="fas fa-barcode"></i></div>
+                        <p class="scanner-text">Ready for USB / Bluetooth scanner</p>
+                        <input type="text" id="deviceScanInput" placeholder="Scan QR with your scanner device..." autocomplete="off">
+                        <p class="device-hint">Click the box, then scan. Most handheld scanners send text + Enter automatically.</p>
+                        <button type="button" id="startDeviceScanBtn"><i class="fas fa-crosshairs"></i> Focus scanner input</button>
+                    </div>
+
+                    <p class="scanner-text" id="scannerHintText">Position the QR code within the frame</p>
+
+                    <div class="status-indicator" id="scannerStatus">
+                        <div class="status-dot"></div>
+                        <span id="scannerStatusText">Scanner ready</span>
                     </div>
                 </div>
 
-                <div id="reader"></div>
+                <!-- RESULT & CAMERA ERROR -->
+                <div id="result">Scan result will appear here</div>
 
-                <div class="device-scanner-panel" id="deviceScannerPanel">
-                    <div class="device-icon"><i class="fas fa-barcode"></i></div>
-                    <p class="scanner-text">Ready for USB / Bluetooth scanner</p>
-                    <input type="text" id="deviceScanInput" placeholder="Scan QR with your scanner device..." autocomplete="off" autofocus>
-                    <p class="device-hint">Click the box, then scan. Most handheld scanners send text + Enter automatically.</p>
-                    <button type="button" id="startDeviceScanBtn"><i class="fas fa-crosshairs"></i> Focus Scanner Input</button>
+                <div id="cameraError" class="camera-error is-hidden">
+                    <div class="camera-error-inner">
+                        <i class="fas fa-exclamation-triangle camera-error-icon"></i>
+                        <h3>Camera access issue</h3>
+                        <p id="cameraErrorMsg"></p>
+                        <button id="retryCameraBtn" class="camera-retry-btn">
+                            <i class="fas fa-redo"></i> Try camera again
+                        </button>
+                        <p class="camera-error-hint">Or use manual entry below</p>
+                    </div>
                 </div>
 
-                <p class="scanner-text" id="scannerHintText">Position the QR code within the frame</p>
-
-                <div class="status-indicator">
-                    <div class="status-dot"></div>
-                    <span>Scanner ready</span>
+                <!-- RIGHT COLUMN : manual entry + instructions -->
+                <div class="manual-input">
+                    <h3><i class="fas fa-keyboard"></i> Manual entry</h3>
+                    <div class="input-group">
+                        <input type="text" id="manualInput" placeholder="Enter student ID">
+                        <select id="manualStatus">
+                            <option value="">— Select status —</option>
+                            <option value="IN">IN</option>
+                            <option value="OUT">OUT</option>
+                        </select>
+                        <input type="time" id="manualTime">
+                        <button id="manualSubmit"><i class="fas fa-paper-plane"></i> Submit</button>
+                    </div>
                 </div>
-            </div>
 
-            <div id="result">Scan result will appear here</div>
-
-            <!-- Camera Permission Helper -->
-            <div id="cameraError" style="display:none; background: linear-gradient(180deg,#fff0f0,#fff2f2); padding: 16px; border-radius: 12px; margin-top: 12px; border: 1px solid rgba(192,57,43,0.08);">
-                <div style="color: #7f1d1d; font-size: 15px; text-align: center;">
-                    <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 8px;"></i>
-                    <h3 style="margin: 8px 0;">Camera Access Issue</h3>
-                    <p id="cameraErrorMsg" style="margin: 12px 0; line-height: 1.6;"></p>
-                    <button id="retryCameraBtn" style="background: #4b6cb7; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; margin-top: 8px;">
-                        <i class="fas fa-redo"></i> Try Camera Again
-                    </button>
-                    <p style="margin-top: 12px; font-size: 13px; color: #6c757d;">Or use Manual Entry below</p>
+                <div class="instructions">
+                    <h3><i class="fas fa-info-circle"></i> Instructions</h3>
+                    <ol>
+                        <li>Choose <strong>Camera</strong> or <strong>Scanner device</strong> at the top</li>
+                        <li>In Camera mode, pick a camera from the list or tap <strong>Switch</strong></li>
+                        <li>In Scanner device mode, focus the input and scan with your USB/Bluetooth scanner</li>
+                        <li>Hold the QR code steady within the frame for camera scans</li>
+                        <li>Use manual entry if scanning still fails</li>
+                    </ol>
                 </div>
-            </div>
-
-            <div class="manual-input">
-                <h3><i class="fas fa-keyboard"></i> Manual Entry</h3>
-                <div class="input-group">
-                    <input type="text" id="manualInput" placeholder="Enter Student ID">
-
-                    <!-- IN/OUT selector -->
-                    <select id="manualStatus">
-                        <option value="">-- Select Status --</option>
-                        <option value="IN">IN</option>
-                        <option value="OUT">OUT</option>
-                    </select>
-
-                    <!-- Time input -->
-                    <input type="time" id="manualTime">
-
-                    <button id="manualSubmit"><i class="fas fa-paper-plane"></i> Submit</button>
-                </div>
-            </div>
-
-
-            <div class="instructions">
-                <h3><i class="fas fa-info-circle"></i> Instructions</h3>
-                <ol>
-                    <li>Choose <strong>Camera</strong> or <strong>Scanner Device</strong> at the top</li>
-                    <li>In Camera mode, pick a camera from the list or tap <strong>Switch</strong></li>
-                    <li>In Scanner Device mode, focus the input and scan with your USB/Bluetooth scanner</li>
-                    <li>Hold the QR code steady within the frame for camera scans</li>
-                    <li>Use Manual Entry if scanning still fails</li>
-                </ol>
             </div>
         </div>
-      </div>
     </div>
 
-<script>
-    // -------------------------
-    // Enhanced Notification System
-    // -------------------------
-    function showNotification(message, type = 'info', title = '', time = '') {
-        const icons = {
-            in: 'fa-sign-in-alt',
-            out: 'fa-sign-out-alt',
-            error: 'fa-exclamation-circle',
-            warning: 'fa-exclamation-triangle',
-            info: 'fa-info-circle'
-        };
-
-        const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
-
-        const displayTime = time || new Date().toLocaleTimeString();
-
-        notification.innerHTML = `
-            <i class="fas ${icons[type] || icons.info} notification-icon"></i>
-            <div class="notification-content">
-                <div class="notification-title">
-                    ${title || (
-                      type === 'in' ? 'Checked In' :
-                      type === 'out' ? 'Checked Out' :
-                      type.charAt(0).toUpperCase() + type.slice(1)
-                    )}
-                </div>
-                <div class="notification-message">${message}</div>
-                <div class="notification-time">
-                    <i class="far fa-clock"></i> ${displayTime}
-                </div>
-            </div>
-            <button class="notification-close" type="button" aria-label="Close"><i class="fas fa-times"></i></button>
-        `;
-
-        const notificationCenter = document.getElementById('notificationCenter');
-        notificationCenter.appendChild(notification);
-
-        // Close button
-        notification.querySelector('.notification-close').addEventListener('click', () => {
-            notification.classList.add('hiding');
-            setTimeout(() => notification.remove(), 400);
-        });
-
-        // Auto remove after 2.6s
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.classList.add('hiding');
-                setTimeout(() => {
-                    if (notification.parentNode) notification.remove();
-                }, 400);
-            }
-        }, 2600);
-
-        // Limit to 5 notifications
-        const notifications = notificationCenter.querySelectorAll('.notification');
-        if (notifications.length > 5) {
-            notifications[0].classList.add('hiding');
-            setTimeout(() => {
-                if (notifications[0].parentNode) notifications[0].remove();
-            }, 400);
-        }
-    }
-
-    // -------------------------
-    // Global scan lock
-    // -------------------------
-    let isProcessingScan = false;
-
-    function getLocalIsoTime() {
-        const d = new Date();
-        const pad = (n) => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    }
-
-    function releaseScanLock(statusIndicator, delayMs = 2000) {
-        setTimeout(() => {
-            if (statusIndicator) {
-                statusIndicator.classList.remove('scanning');
-                statusIndicator.querySelector('span').textContent = 'Scanner ready';
-            }
-            isProcessingScan = false;
-        }, delayMs);
-    }
-
-    function handleLiveScanResponse(response, statusIndicator) {
-        const resultDiv = document.getElementById("result");
-        const currentTime = new Date().toLocaleTimeString();
-
-        if (response.success) {
-            resultDiv.innerHTML = response.message;
-            resultDiv.className = response.color === "success" ? "success" : "info";
-
-            if (response.status === "IN") {
-                showNotification(response.message, "in", `${response.student_name}`, response.time || currentTime);
-            } else if (response.status === "OUT") {
-                showNotification(response.message, "out", `${response.student_name}`, response.time || currentTime);
-            } else {
-                showNotification(response.message, "info", "Success", response.time || currentTime);
-            }
-        } else {
-            resultDiv.innerHTML = response.message;
-            resultDiv.className = "error";
-            showNotification(response.message, response.color === "warning" ? "warning" : "error", "Error", response.time || currentTime);
-        }
-
-        releaseScanLock(statusIndicator);
-    }
-
-    function handleQueuedScan(studentId, statusIndicator) {
-        const resultDiv = document.getElementById("result");
-        const msg = `Saved offline for ${studentId}. Will sync when internet returns.`;
-        resultDiv.innerHTML = msg;
-        resultDiv.className = "info";
-        showNotification(msg, "warning", "Queued Offline");
-        releaseScanLock(statusIndicator, 1500);
-    }
-
-    // -------------------------
-    // Offline sync (queue + flush when back online)
-    // -------------------------
-    const offlineSyncBadge = document.getElementById('offlineSyncBadge');
-    const offlineSyncLabel = document.getElementById('offlineSyncLabel');
-    const offlineSyncCount = document.getElementById('offlineSyncCount');
-
-    function updateOfflineSyncBadge(count, online) {
-        if (!offlineSyncBadge) return;
-        const show = !online || count > 0;
-        offlineSyncBadge.classList.toggle('is-visible', show);
-        offlineSyncBadge.classList.toggle('is-offline', !online);
-        offlineSyncBadge.classList.toggle('is-pending', online && count > 0);
-        offlineSyncCount.textContent = String(count);
-        if (!online) {
-            offlineSyncLabel.textContent = count > 0 ? 'Offline · pending' : 'Offline';
-        } else if (count > 0) {
-            offlineSyncLabel.textContent = 'Syncing…';
-        } else {
-            offlineSyncLabel.textContent = 'Synced';
-        }
-    }
-
-    OfflineScanSync.init({
-        saveUrl: "{% url 'save_scan' %}",
-        csrfToken: "{{ csrf_token }}",
-        onQueueChange: updateOfflineSyncBadge,
-        onItemSynced: function(item, response, remaining) {
-            if (response && response.success) {
-                showNotification(
-                    response.message || 'Offline scan synced',
-                    response.status === 'OUT' ? 'out' : 'in',
-                    response.student_name || 'Synced',
-                    response.time || ''
-                );
-            } else if (response && response.message) {
-                showNotification(response.message, response.color === 'warning' ? 'warning' : 'error', 'Sync note');
-            }
-            if (remaining === 0) {
-                showNotification('All offline scans synced', 'info', 'Back Online');
-            }
-        },
-        onFlushDone: function(remaining) {
-            updateOfflineSyncBadge(remaining, OfflineScanSync.isOnline());
-        }
-    });
-
-    if (offlineSyncBadge) {
-        offlineSyncBadge.addEventListener('click', function() {
-            if (!OfflineScanSync.isOnline()) {
-                showNotification('Still offline. Scans will sync automatically when connected.', 'warning', 'Offline');
-                return;
-            }
-            if (OfflineScanSync.count() === 0) {
-                showNotification('Nothing pending to sync', 'info', 'Sync');
-                return;
-            }
-            showNotification(`Syncing ${OfflineScanSync.count()} pending scan(s)…`, 'info', 'Sync');
-            OfflineScanSync.flush();
-        });
-    }
-
-    window.addEventListener('offline', function() {
-        showNotification('Connection lost. Scans will be saved locally and synced later.', 'warning', 'Offline Mode');
-    });
-    window.addEventListener('online', function() {
-        const pending = OfflineScanSync.count();
-        showNotification(
-            pending > 0 ? `Back online. Syncing ${pending} pending scan(s)…` : 'Back online.',
-            'info',
-            'Online'
-        );
-    });
-
-    function getSelectedEventId() {
-        return (document.getElementById('eventSelect')?.value || '').trim();
-    }
-
-    function requireSelectedEvent(statusIndicator) {
-        if (getSelectedEventId()) return true;
-
-        const msg = "Please select an event before scanning attendance.";
-        const resultDiv = document.getElementById("result");
-        if (resultDiv) {
-            resultDiv.innerHTML = msg;
-            resultDiv.className = "error";
-        }
-        showNotification(msg, "warning", "Event Required");
-
-        const eventSelect = document.getElementById('eventSelect');
-        if (eventSelect) {
-            eventSelect.focus();
-            eventSelect.classList.add('event-select-required');
-            setTimeout(() => eventSelect.classList.remove('event-select-required'), 1800);
-        }
-
-        if (statusIndicator) {
-            setTimeout(() => {
-                statusIndicator.classList.remove('scanning');
-                statusIndicator.querySelector('span').textContent = 'Scanner ready';
-                isProcessingScan = false;
-            }, 1200);
-        } else {
-            isProcessingScan = false;
-        }
-        return false;
-    }
-
-    // -------------------------
-    // QR Scan Success Handler
-    // -------------------------
-    function onScanSuccess(decodedText, decodedResult) {
-        if (isProcessingScan) return;
-        isProcessingScan = true;
-
-        const statusIndicator = document.querySelector('.status-indicator');
-        statusIndicator.classList.add('scanning');
-        statusIndicator.querySelector('span').textContent = 'Processing QR code...';
-
-        if (!requireSelectedEvent(statusIndicator)) return;
-
-        let lines = decodedText.split("\n");
-        let idLine = lines.find(l => l.startsWith("ID:"));
-        let tokenLine = lines.find(l => l.startsWith("TOKEN:"));
-        if (!idLine) {
-            document.getElementById("result").innerHTML = "Invalid QR format";
-            document.getElementById("result").className = "error";
-            showNotification("Invalid QR code format. Please scan a valid student ID QR code.", "error", "Scan Failed");
-
-            setTimeout(() => {
-                statusIndicator.classList.remove('scanning');
-                statusIndicator.querySelector('span').textContent = 'Scanner ready';
-                isProcessingScan = false;
-            }, 2000);
-            return;
-        }
-
-        let student_id = idLine.replace("ID:", "").trim();
-        let qr_token = tokenLine ? tokenLine.replace("TOKEN:", "").trim() : "";
-        processStudentId(student_id, statusIndicator, {
-            qr_payload: decodedText,
-            qr_token: qr_token,
-            source: (typeof scanMode !== 'undefined' && scanMode === 'device') ? 'device' : 'camera'
-        });
-    }
-
-    // -------------------------
-    // Process Student ID
-    // -------------------------
-    function processStudentId(student_id, statusIndicator, extra = {}) {
-        if (!requireSelectedEvent(statusIndicator)) return;
-
-        showNotification(`Processing student ID: ${student_id}`, "info", "Scanning");
-
-        const payload = {
-            student_id: student_id,
-            qr_payload: extra.qr_payload || "",
-            qr_token: extra.qr_token || "",
-            source: extra.source || "camera",
-            event_label: extra.event_label || "",
-            event_id: getSelectedEventId(),
-            local_time: getLocalIsoTime(),
-            csrfmiddlewaretoken: "{{ csrf_token }}"
-        };
-
-        OfflineScanSync.postOrQueue(payload).done(function(result) {
-            if (result.mode === 'queued') {
-                handleQueuedScan(student_id, statusIndicator);
-                return;
-            }
-            handleLiveScanResponse(result.response, statusIndicator);
-        }).fail(function() {
-            showNotification("Request failed. Please try again.", "error", "Error");
-            releaseScanLock(statusIndicator, 1200);
-        });
-    }
-
-    // -------------------------
-    // Initialize QR Scanner with Camera / Device switcher
-    // -------------------------
-    let html5QrCode = null;
-    let cameraInitialized = false;
-    let cameras = [];
-    let currentCameraId = null;
-    let isCameraRunning = false;
-    let scanMode = localStorage.getItem('qrScanMode') || 'camera';
-
-    const cameraSelect = document.getElementById('cameraSelect');
-    const cameraControls = document.getElementById('cameraControls');
-    const readerEl = document.getElementById('reader');
-    const devicePanel = document.getElementById('deviceScannerPanel');
-    const deviceInput = document.getElementById('deviceScanInput');
-    const scannerHintText = document.getElementById('scannerHintText');
-    const modeCameraBtn = document.getElementById('modeCameraBtn');
-    const modeDeviceBtn = document.getElementById('modeDeviceBtn');
-
-    function setStatusText(text) {
-        const statusIndicator = document.querySelector('.status-indicator');
-        if (statusIndicator) statusIndicator.querySelector('span').textContent = text;
-    }
-
-    function updateModeUI() {
-        const isCamera = scanMode === 'camera';
-        modeCameraBtn.classList.toggle('active', isCamera);
-        modeDeviceBtn.classList.toggle('active', !isCamera);
-        cameraControls.style.display = isCamera ? 'flex' : 'none';
-        readerEl.style.display = isCamera ? 'block' : 'none';
-        devicePanel.classList.toggle('active', !isCamera);
-        scannerHintText.textContent = isCamera
-            ? 'Position the QR code within the frame'
-            : 'Use your handheld / USB scanner device';
-        setStatusText(isCamera ? 'Scanner ready' : 'Waiting for scanner device...');
-    }
-
-    async function stopCamera() {
-        if (!html5QrCode || !isCameraRunning) return;
-        try {
-            await html5QrCode.stop();
-            await html5QrCode.clear();
-        } catch (e) {
-            console.log('Error stopping camera:', e);
-        }
-        isCameraRunning = false;
-    }
-
-    async function startCamera(cameraId) {
-        if (!cameraId) return;
-
-        hideCameraError();
-        await stopCamera();
-
-        if (!html5QrCode) {
-            html5QrCode = new Html5Qrcode('reader');
-        }
-
-        currentCameraId = cameraId;
-        localStorage.setItem('qrLastCameraId', cameraId);
-
-        try {
-            await html5QrCode.start(
-                cameraId,
-                {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0
-                },
-                onScanSuccess,
-                onScanError
-            );
-            isCameraRunning = true;
-            cameraInitialized = true;
-            setStatusText('Camera scanning...');
-            showNotification('Camera started', 'info', 'Scanner');
-        } catch (err) {
-            console.error(err);
-            const msg = (err && (err.message || err.name || String(err))) || 'Unknown camera error';
-            onScanError(msg);
-            setStatusText('Camera failed');
-        }
-    }
-
-    function populateCameraSelect(selectedId) {
-        cameraSelect.innerHTML = '';
-        if (!cameras.length) {
-            cameraSelect.innerHTML = '<option value="">No cameras found</option>';
-            document.getElementById('switchCameraBtn').disabled = true;
-            return;
-        }
-
-        cameras.forEach((cam, index) => {
-            const opt = document.createElement('option');
-            opt.value = cam.id;
-            const label = cam.label || `Camera ${index + 1}`;
-            const facing = /back|rear|environment/i.test(label)
-                ? ' (Back)'
-                : /front|user|face/i.test(label)
-                    ? ' (Front)'
-                    : '';
-            opt.textContent = label + facing;
-            cameraSelect.appendChild(opt);
-        });
-
-        const preferred = selectedId && cameras.some(c => c.id === selectedId)
-            ? selectedId
-            : cameras[0].id;
-        cameraSelect.value = preferred;
-        document.getElementById('switchCameraBtn').disabled = cameras.length < 2;
-    }
-
-    async function loadCamerasAndStart() {
-        try {
-            cameras = await Html5Qrcode.getCameras();
-            const saved = localStorage.getItem('qrLastCameraId');
-            populateCameraSelect(saved);
-            if (cameras.length) {
-                await startCamera(cameraSelect.value);
-            } else {
-                showCameraError(
-                    `<strong>📷 No Camera Found</strong><br><br>
-                    Your device doesn't have a camera or it's not detected.<br>
-                    Switch to <strong>Scanner Device</strong> mode or use Manual Entry.`
-                );
-            }
-        } catch (err) {
-            console.error(err);
-            const msg = (err && (err.message || err.name || String(err))) || 'Unable to access cameras';
-            onScanError(msg);
-        }
-    }
-
-    async function setScanMode(mode) {
-        if (mode !== 'camera' && mode !== 'device') return;
-        scanMode = mode;
-        localStorage.setItem('qrScanMode', mode);
-        updateModeUI();
-
-        if (mode === 'camera') {
-            await loadCamerasAndStart();
-        } else {
-            await stopCamera();
-            setTimeout(() => deviceInput.focus(), 50);
-            showNotification('Scanner device mode ready. Scan into the input box.', 'info', 'Device Mode');
-        }
-    }
-
-    modeCameraBtn.addEventListener('click', () => setScanMode('camera'));
-    modeDeviceBtn.addEventListener('click', () => setScanMode('device'));
-
-    cameraSelect.addEventListener('change', async function() {
-        if (scanMode !== 'camera' || !this.value) return;
-        showNotification('Switching camera...', 'info', 'Camera');
-        await startCamera(this.value);
-    });
-
-    document.getElementById('switchCameraBtn').addEventListener('click', async function() {
-        if (cameras.length < 2) {
-            showNotification('Only one camera available', 'warning', 'Camera');
-            return;
-        }
-        const idx = cameras.findIndex(c => c.id === currentCameraId);
-        const next = cameras[(idx + 1) % cameras.length];
-        cameraSelect.value = next.id;
-        showNotification(`Switched to ${next.label || 'next camera'}`, 'info', 'Camera');
-        await startCamera(next.id);
-    });
-
-    // Hardware scanner: many devices type characters then send Enter
-    function handleDeviceScanValue(raw) {
-        const value = (raw || '').trim();
-        if (!value) return;
-
-        deviceInput.value = '';
-
-        // Support full QR payload ("ID:xxxx") or plain student id
-        let studentId = value;
-        if (value.includes('ID:')) {
-            const lines = value.split(/\r?\n/);
-            const idLine = lines.find(l => l.startsWith('ID:'));
-            if (idLine) studentId = idLine.replace('ID:', '').trim();
-        }
-
-        const statusIndicator = document.querySelector('.status-indicator');
-        processStudentId(studentId, statusIndicator, {
-            qr_payload: value,
-            source: 'device'
-        });
-    }
-
-    deviceInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            handleDeviceScanValue(this.value);
-        }
-    });
-
-    document.getElementById('startDeviceScanBtn').addEventListener('click', function() {
-        deviceInput.focus();
-        showNotification('Input focused — scan now', 'info', 'Device Mode');
-    });
-
-    // Error handler for camera issues
-    function onScanError(errorMessage) {
-        // Mark camera as initialized on first frame error (means camera is working)
-        if (!cameraInitialized && !errorMessage.includes("NotAllowed") && !errorMessage.includes("NotFound")) {
-            cameraInitialized = true;
-        }
-
-        // Handle critical errors
-        if (errorMessage.includes("NotAllowedError") || errorMessage.includes("Permission denied")) {
-            showCameraError(
-                `<strong>📱 Camera Permission Denied</strong><br><br>
-                <strong>Quick Fix for Realme C100i:</strong><br>
-                1. Open <strong>Settings</strong> app<br>
-                2. Go to <strong>Apps</strong> or <strong>App Management</strong><br>
-                3. Find your browser (Chrome/Firefox/etc)<br>
-                4. Tap <strong>Permissions</strong><br>
-                5. Find <strong>Camera</strong> → Set to <strong>Allow</strong><br>
-                6. Come back and click "Try Camera Again"<br><br>
-                <strong>Still not working?</strong><br>
-                • Make sure no other app is using the camera<br>
-                • Try closing and reopening your browser<br>
-                • Restart your phone if needed`
-            );
-            showNotification("Camera permission denied. Please enable in phone settings.", "error", "Permission Error");
-        } else if (errorMessage.includes("NotFoundError") || errorMessage.includes("Camera not found") || errorMessage.includes("No cameras")) {
-            showCameraError(
-                `<strong>📷 No Camera Found</strong><br><br>
-                Your device doesn't have a camera or it's not detected.<br>
-                Switch to <strong>Scanner Device</strong> mode or use Manual Entry.`
-            );
-        } else if (errorMessage.includes("NotReadableError")) {
-            showCameraError(
-                `<strong>📹 Camera In Use</strong><br><br>
-                Another app is using your camera.<br>
-                1. Close all camera apps<br>
-                2. Close other browser tabs<br>
-                3. Click "Try Camera Again"`
-            );
-        } else if (errorMessage.includes("OverconstrainedError")) {
-            showCameraError(
-                `<strong>⚙️ Camera Not Compatible</strong><br><br>
-                Your camera doesn't support the required settings.<br>
-                Try another camera from the list, or use Scanner Device / Manual Entry.`
-            );
-        }
-        // Ignore routine "QR code not found" errors
-    }
-
-    function showCameraError(message) {
-        document.getElementById('cameraErrorMsg').innerHTML = message;
-        document.getElementById('cameraError').style.display = 'block';
-        document.getElementById('result').style.display = 'none';
-    }
-
-    function hideCameraError() {
-        document.getElementById('cameraError').style.display = 'none';
-        document.getElementById('result').style.display = 'flex';
-    }
-
-    // Retry camera button
-    document.getElementById('retryCameraBtn').addEventListener('click', function() {
-        hideCameraError();
-        cameraInitialized = false;
-        showNotification("Requesting camera access again...", "info", "Retry");
-        setScanMode('camera');
-    });
-
-    // Persist selected event for this browser + show picture/title preview
-    const eventSelect = document.getElementById('eventSelect');
-    const eventPicture = document.getElementById('eventPicture');
-    const eventPicturePlaceholder = document.getElementById('eventPicturePlaceholder');
-    const eventPreviewTitle = document.getElementById('eventPreviewTitle');
-    const eventPreviewSub = document.getElementById('eventPreviewSub');
-    const eventPreviewDesc = document.getElementById('eventPreviewDesc');
-
-    function updateEventPreview() {
-        if (!eventSelect) return;
-        const opt = eventSelect.options[eventSelect.selectedIndex];
-        const picture = opt?.dataset?.picture || '';
-        const title = opt?.dataset?.title || '';
-        const sub = opt?.dataset?.sub || '';
-        const description = (opt?.dataset?.description || '').trim();
-
-        if (eventPreviewTitle) {
-            eventPreviewTitle.textContent = title || (eventSelect.value ? (opt?.text || 'Selected event') : 'Select an event');
-        }
-        if (eventPreviewSub) {
-            eventPreviewSub.textContent = sub || (eventSelect.value ? '' : 'Required before scanning');
-        }
-        if (eventPreviewDesc) {
-            eventPreviewDesc.textContent = description;
-        }
-        if (eventPicture && eventPicturePlaceholder) {
-            if (picture) {
-                eventPicture.src = picture;
-                eventPicture.classList.add('is-visible');
-                eventPicturePlaceholder.classList.add('is-hidden');
-            } else {
-                eventPicture.removeAttribute('src');
-                eventPicture.classList.remove('is-visible');
-                eventPicturePlaceholder.classList.remove('is-hidden');
-            }
-        }
-    }
-
-    if (eventSelect) {
-        const savedEvent = localStorage.getItem('qrSelectedEventId');
-        if (savedEvent && [...eventSelect.options].some(o => o.value === savedEvent)) {
-            eventSelect.value = savedEvent;
-        }
-        updateEventPreview();
-        eventSelect.addEventListener('change', function() {
-            localStorage.setItem('qrSelectedEventId', this.value || '');
-            updateEventPreview();
-            const label = this.options[this.selectedIndex]?.dataset?.title
-                || this.options[this.selectedIndex]?.text
-                || 'No event';
-            showNotification(this.value ? `Scanning for: ${label}` : 'Select an event to start scanning', this.value ? 'info' : 'warning', 'Event');
-        });
-    }
-
-    // Start in last used mode
-    updateModeUI();
-    setScanMode(scanMode);
-
-    // -------------------------
-    // Manual Input Submission
-    // -------------------------
-    document.getElementById('manualSubmit').addEventListener('click', function() {
-        const studentId = document.getElementById('manualInput').value.trim();
-        const status = document.getElementById('manualStatus').value;
-        const customTime = document.getElementById('manualTime').value;
-
-        if (!requireSelectedEvent()) return;
-
-        if (!studentId) {
-            showNotification("Please enter a Student ID", "warning", "Input Error");
-            return;
-        }
-        if (!status) {
-            showNotification("Please select IN or OUT", "warning", "Input Error");
-            return;
-        }
-        if (!customTime) {
-            showNotification("Need time to input", "warning", "Input Error");
-            return;
-        }
-
-        if (isProcessingScan) {
-            showNotification("Please wait while the current scan is being processed", "warning", "Busy");
-            return;
-        }
-        isProcessingScan = true;
-
-        const statusIndicator = document.querySelector('.status-indicator');
-        statusIndicator.classList.add('scanning');
-        statusIndicator.querySelector('span').textContent = 'Processing manual input...';
-
-        // ✅ Build full datetime (today + custom time)
-        let todayDate = new Date().toISOString().split("T")[0];
-        let fullDateTime = todayDate + "T" + customTime + ":00";
-
-        OfflineScanSync.postOrQueue({
-            student_id: studentId,
-            manual_status: status,
-            local_time: fullDateTime,
-            source: "manual",
-            event_id: getSelectedEventId(),
-            csrfmiddlewaretoken: "{{ csrf_token }}"
-        }).done(function(result) {
-            if (result.mode === 'queued') {
-                handleQueuedScan(studentId, statusIndicator);
-                return;
-            }
-            handleLiveScanResponse(result.response, statusIndicator);
-        }).fail(function() {
-            showNotification("Request failed. Please try again.", "error", "Error");
-            releaseScanLock(statusIndicator, 1200);
-        });
-
-        // Reset fields
-        document.getElementById('manualInput').value = '';
-        document.getElementById('manualStatus').value = '';
-        document.getElementById('manualTime').value = '';
-    });
-
-    // Allow Enter key for manual submission
-    document.getElementById('manualInput').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            document.getElementById('manualSubmit').click();
-        }
-    });
-</script>
-
+    {{ scanner_config|json_script:"scanner-config" }}
+    <script src="{% static 'qrapp/js/html5-qrcode.min.js' %}"></script>
+    <script src="{% static 'qrapp/js/chime.js' %}"></script>
+    <script src="{% static 'qrapp/js/scanner.js' %}" defer></script>
 </body>
 </html>
