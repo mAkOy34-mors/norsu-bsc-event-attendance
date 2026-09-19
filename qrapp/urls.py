@@ -15,6 +15,8 @@ urlpatterns = [
     path("admin_dashboard/", views.admin_dashboard, name="admin_dashboard"),  # OLD: Full dashboard with tables
 
     path("add_student/", views.add_student, name="add_student"),
+    path("student/<int:student_id>/qr/", views.new_student_qr, name="new_student_qr"),
+    path("student/<int:student_id>/qr/image/", views.student_qr_image, name="student_qr_image"),
     path("all_qr/", views.generate_all_qr, name="generate_all_qr"),
     path("upload_pdf/", views.upload_pdf, name="upload_pdf"),
     path("download_pdf/", views.download_qr_pdf, name="download_qr_pdf"),
@@ -52,6 +54,7 @@ urlpatterns = [
     
     # User management
     path('ajax/manage-users/', views.manage_users, name='manage_users'),
+    path('ajax/pending-users/', views.ajax_pending_users, name='ajax_pending_users'),
     path('ajax/scans-since/', views.scans_since, name='scans_since'),
     path('ajax/sidebar-logs/', views.ajax_sidebar_logs, name='ajax_sidebar_logs'),
 

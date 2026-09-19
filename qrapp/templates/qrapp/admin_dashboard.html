@@ -352,6 +352,10 @@
                     <button type="button" class="btn btn-primary btn-sm" data-action="open-qr-codes">
                         <i class="fas fa-qrcode"></i> QR Codes
                     </button>
+                    <a href="{% url 'generate_all_qr' %}" class="btn btn-primary btn-sm"
+                       title="Browse and download the QR code of every student">
+                        <i class="fas fa-images"></i> View All QR Codes
+                    </a>
                 </div>
                 <div class="actions-secondary">
                     <a href="{% url 'import_issues' %}" class="btn btn-warning btn-sm" title="Students the last import could not identify">

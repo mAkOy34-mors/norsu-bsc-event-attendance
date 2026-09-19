@@ -32,13 +32,13 @@
 <div class="page-header">
     <div class="header-content">
         <h2><i class="fas fa-user-check"></i> Approve Users</h2>
-        <p>Review and approve new registration requests</p>
+        <p>Review and approve new registration requests — updates in realtime</p>
     </div>
     <div class="header-actions">
-        <span class="badge badge-warning badge-lg">
+        <span class="badge badge-warning badge-lg" id="pendingCountBadge">
             Pending: {{ pending_users.count }}
         </span>
-        <span class="badge badge-info badge-lg">
+        <span class="badge badge-info badge-lg" id="totalUsersBadge">
             Total Users: {{ total_users }}
         </span>
     </div>
@@ -47,50 +47,57 @@
 <div class="card">
     <div class="card-header">
         <h3><i class="fas fa-users"></i> Pending Registrations</h3>
+        <span class="live-dot" id="approveLiveDot" title="Live"></span>
     </div>
     <div class="card-body">
         <div class="table-container">
-            {% if pending_users %}
-            <form method="post">
-                {% csrf_token %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>User</th>
-                            <th>Email</th>
-                            <th class="cell-actions">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in pending_users %}
-                        <tr>
-                            <td>
-                                <div class="user-info">
-                                    <div class="avatar">{{ user.username|slice:":2"|upper }}</div>
-                                    <div class="user-details">
-                                        <div class="username">{{ user.username }}</div>
-                                        <div class="email">Registered: {{ user.date_joined|date:"M d, Y H:i" }}</div>
-                                    </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Email</th>
+                        <th class="cell-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="pendingTableBody">
+                    {% for user in pending_users %}
+                    <tr data-user-id="{{ user.id }}">
+                        <td>
+                            <div class="user-info">
+                                <div class="avatar">{{ user.username|slice:":2"|upper }}</div>
+                                <div class="user-details">
+                                    <div class="username">{{ user.username }}</div>
+                                    <div class="email">Registered: {{ user.date_joined|date:"M d, Y H:i" }}</div>
                                 </div>
-                            </td>
-                            <td>{{ user.email }}</td>
-                            <td class="cell-actions">
-                                <button type="submit" name="user_id" value="{{ user.id }}" class="btn btn-success btn-sm">
-                                    <i class="fas fa-check"></i> Approve
-                                </button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </form>
-            {% else %}
-            <div class="no-users" style="text-align:center; padding: 36px; color: var(--gray);">
-                <i class="fas fa-users" style="font-size: 42px; margin-bottom: 12px; color: var(--gray-light); display:block;"></i>
-                <p>No pending users to approve — all registrations have been reviewed.</p>
-            </div>
-            {% endif %}
+                            </div>
+                        </td>
+                        <td>{{ user.email }}</td>
+                        <td class="cell-actions">
+                            <button type="button" class="btn btn-success btn-sm approve-btn"
+                                    data-user-id="{{ user.id }}" data-user-name="{{ user.username|escapejs }}">
+                                <i class="fas fa-check"></i> Approve
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr class="pending-empty-row">
+                        <td colspan="3">
+                            <div class="no-users" style="text-align:center; padding: 36px; color: var(--gray);">
+                                <i class="fas fa-users" style="font-size: 42px; margin-bottom: 12px; color: var(--gray-light); display:block;"></i>
+                                <p>No pending users to approve — all registrations have been reviewed.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
+{% endblock %}
+
+<span hidden id="csrfTokenValue" data-csrf="{{ csrf_token }}"></span>
+
+{% block extra_js %}
+<script src="{% static 'qrapp/js/approve_users.js' %}" defer></script>
 {% endblock %}

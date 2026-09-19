@@ -586,6 +586,7 @@ def admin_dashboard(request):
 
     app_urls = {
         "manageUsers": reverse("manage_users"),
+        "pendingUsers": reverse("ajax_pending_users"),
         "addStudent": reverse("add_student"),
         "uploadPdf": reverse("upload_pdf"),
         "ajaxQrCodes": reverse("ajax_qr_codes"),
@@ -1434,9 +1435,22 @@ def ajax_reports_data(request):
 
 
 # ---------------- AUTH ----------------
+def _dashboard_redirect_for(user):
+    """Send an already-signed-in user to their home page (staff -> dashboard,
+    scanner operators -> scanner)."""
+    if user.is_staff or user.is_superuser:
+        return redirect('admin_dashboard')
+    return redirect('scanner')
+
+
 @ratelimit(key='ip', rate='10/h', method='POST', block=True)
 @ratelimit(key='ip', rate='3/m', method='POST', block=True)
 def register_view(request):
+    # Opening /register/ in another tab while already signed in should not
+    # show the form again — the session (cookie) already identifies the user.
+    if request.user.is_authenticated:
+        return _dashboard_redirect_for(request.user)
+
     if request.method == "POST":
         username = (request.POST.get("username") or "").strip()
         email = (request.POST.get("email") or "").strip()
@@ -1494,21 +1508,50 @@ def approve_users(request):
     })
 
 
+@ratelimit(key=client_username, rate='60/m', block=True)
+@staff_member_required
+def ajax_pending_users(request):
+    """Realtime feed for the Approve Users pages: the pending list plus
+    live counts, polled every few seconds so new registrations appear
+    without a page refresh."""
+    if request.headers.get('x-requested-with') != 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'error': 'Invalid request'}, status=400)
+
+    pending = list(User.objects.filter(is_active=False).order_by('-date_joined'))
+    return JsonResponse({
+        "success": True,
+        "count": len(pending),
+        "active_users": User.objects.filter(is_active=True).count(),
+        "total_users": User.objects.count(),
+        "pending": [
+            {
+                "id": u.id,
+                "username": u.username,
+                "email": u.email,
+                "date_joined": u.date_joined.strftime("%b %d, %Y %H:%M"),
+            }
+            for u in pending
+        ],
+    })
+
+
 # Brute-force protection: strict per-IP burst + hourly caps on login POSTs.
 @ratelimit(key='ip', rate='30/h', method='POST', block=True)
 @ratelimit(key='ip', rate='5/m', method='POST', block=True)
 def login_view(request):
+    # Already signed in (e.g. the login URL is opened in a second tab)?
+    # The Django session cookie already identifies the user — go straight
+    # to their dashboard instead of showing the login form again.
+    if request.user.is_authenticated:
+        return _dashboard_redirect_for(request.user)
+
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            # Redirect based on role
-            if user.is_staff or user.is_superuser:
-                return redirect('admin_dashboard')
-            else:
-                return redirect('scanner')
+            return _dashboard_redirect_for(user)
         else:
             # authenticate() returns None for is_active=False accounts, which
             # made every pending registration look like a wrong password.
@@ -1523,6 +1566,21 @@ def login_view(request):
                 )
             else:
                 messages.error(request, "Invalid username or password")
+    else:
+        # Arriving here through a login_required redirect while still holding
+        # a session cookie that no longer matches a logged-in user means the
+        # session aged out or was flushed: explain instead of showing a bare
+        # login form. (logout() deletes the cookie, so manual logouts and
+        # browser-close logouts never trigger this.)
+        if (
+            request.GET.get("next")
+            and settings.SESSION_COOKIE_NAME in request.COOKIES
+            and not request.user.is_authenticated
+        ):
+            messages.info(
+                request,
+                "Your session has expired. Please log in again to continue."
+            )
     return render(request, "qrapp/login.html")
 
 
@@ -1536,7 +1594,10 @@ def logout_view(request):
 @ratelimit(key=client_username, rate='10/m', block=True)
 @staff_member_required
 def download_qr_pdf(request):
-    response, error = export_qr_response({**request.GET, "format": "pdf"})
+    # request.GET is a QueryDict: {**request.GET} yields lists per key, which
+    # broke .strip() downstream. Flatten to plain str values first.
+    params = {key: request.GET.get(key) or "" for key in request.GET}
+    response, error = export_qr_response({**params, "format": "pdf"})
     if error:
         return HttpResponse(error, status=404)
     return response
@@ -1582,7 +1643,9 @@ def ajax_qr_codes(request):
 @ratelimit(key=client_username, rate='10/m', block=True)
 @staff_member_required
 def export_qr_codes(request):
-    response, error = export_qr_response(request.GET)
+    # Flatten QueryDict to plain str values (see download_qr_pdf).
+    params = {key: request.GET.get(key) or "" for key in request.GET}
+    response, error = export_qr_response(params)
     if error:
         return HttpResponse(error, status=404)
     return response
@@ -1719,8 +1782,11 @@ def delete_all_qr(request):
 @staff_member_required
 def add_student(request):
     if request.method == 'POST':
-        # Check if it's an AJAX request
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.POST.get('student_id'):
+        # Only treat as AJAX when the client explicitly sends the header
+        # ($.post always does). Checking request.POST.get('student_id') here
+        # made the plain add_student page form print raw JSON to the browser
+        # instead of rendering, because that form also posts 'student_id'.
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             # Handle AJAX request
             try:
                 from .college_program import resolve_college_and_program, resolve_program_and_major
@@ -1746,16 +1812,26 @@ def add_student(request):
                     major=major
                 )
                 student.save()
-                return JsonResponse({'success': True, 'message': 'Student added successfully!'})
+                # Send back the new student's QR page so the UI can display
+                # and download it immediately after the add.
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Student added successfully!',
+                    'student_pk': student.pk,
+                    'qr_page_url': reverse('new_student_qr', args=[student.pk]),
+                    'qr_download_url': reverse('student_qr_image', args=[student.pk]) + '?download=1',
+                })
             except Exception as e:
                 return JsonResponse({'success': False, 'error': str(e)}, status=400)
         else:
             # Handle regular form submission
             form = StudentForm(request.POST)
             if form.is_valid():
-                form.save()
-                messages.success(request, "Student added successfully!")
-                return redirect('generate_all_qr')
+                student = form.save()
+                messages.success(request, "Student added successfully! Their QR code is shown below.")
+                # Go straight to the new student's QR page so it can be
+                # viewed/downloaded right away.
+                return redirect('new_student_qr', student_id=student.pk)
             else:
                 messages.error(request, "Please correct the errors below.")
     else:
@@ -1763,22 +1839,57 @@ def add_student(request):
     return render(request, 'qrapp/add_student.html', {'form': form})
 
 
-# Renders a QR preview for every student: heavy page, keep it capped.
-@ratelimit(key=client_username, rate='10/m', block=True)
+@staff_member_required
+def new_student_qr(request, student_id):
+    """Show the QR code of a newly added student, with a download button."""
+    student = get_object_or_404(
+        Student.objects.select_related("college", "program", "major"), pk=student_id
+    )
+    return render(request, 'qrapp/new_student_qr.html', {'student': student})
+
+
+@staff_member_required
+def student_qr_image(request, student_id):
+    """Serve a student's labeled QR PNG. ?download=1 forces a file download."""
+    student = get_object_or_404(
+        Student.objects.select_related("college", "program", "major"), pk=student_id
+    )
+    from .qr_codes import build_qr_labeled_image, qr_image_basename
+
+    buffer = io.BytesIO()
+    build_qr_labeled_image(student).save(buffer, format="PNG")
+    buffer.seek(0)
+    response = HttpResponse(buffer.getvalue(), content_type="image/png")
+    filename = f"{qr_image_basename(student)}_qr.png"
+    if request.GET.get("download"):
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    else:
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
+    return response
+
+
+# The page now renders student metadata only — QR PNGs are generated
+# on-demand per card by student_qr_image as they scroll into view, so this
+# stays fast even for a full roster.
+@ratelimit(key=client_username, rate='60/m', block=True)
 @staff_member_required
 def generate_all_qr(request):
-    # select_related avoids ~3 queries per student while serializing previews.
-    students = Student.objects.select_related("college", "program", "major").all()
-    student_map = {student.student_id: student for student in students}
-    qr_list = []
-    for item in serialize_qr_list(students):
-        student = student_map.get(item["student_id"])
-        if student:
-            qr_list.append({"student": student, "qr_img": item["qr_img"]})
+    students = (
+        Student.objects.select_related("college", "program", "major")
+        .order_by("name", "student_id")
+    )
+    search = (request.GET.get("search") or "").strip()
+    if search:
+        students = students.filter(
+            Q(name__icontains=search) | Q(student_id__icontains=search)
+        )
 
+    total_count = Student.objects.count()
     return render(request, "qrapp/all_qr.html", {
-        "qr_list": qr_list,
-        "student_count": len(qr_list),
+        "students": students,
+        "search": search,
+        "match_count": students.count(),
+        "student_count": total_count,
         "import_issue_count": _import_issue_count(),
     })
 

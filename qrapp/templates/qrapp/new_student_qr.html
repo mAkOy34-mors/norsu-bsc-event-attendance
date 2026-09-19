@@ -1,0 +1,45 @@
+{% extends "qrapp/base.html" %}
+
+{% block title %}QR Code - {{ student.name }}{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 520px; margin: 0 auto; text-align: center;">
+    <h1>QR Code Generated</h1>
+    <p>Student <strong>{{ student.student_id }}</strong> — {{ student.name }}</p>
+    <p style="color:#6b7280; font-size:14px;">
+        {{ student.college|default:"" }} {{ student.program|default:"" }}{% if student.major %} — {{ student.major }}{% endif %}, Year {{ student.year }}
+    </p>
+
+    <div style="display:flex; justify-content:center; margin: 16px 0;">
+        <img src="{% url 'student_qr_image' student.pk %}"
+             alt="QR code for {{ student.name }}"
+             style="width: 260px; height: 260px; object-fit: contain; border: 1px solid #e5e8ee; border-radius: 8px; background:#fff;">
+    </div>
+
+    <div class="action-buttons" style="justify-content:center;">
+        <a href="{% url 'student_qr_image' student.pk %}?download=1" class="btn btn-success" download>
+            <i class="fas fa-download"></i> Download QR Code
+        </a>
+        <a href="{% url 'add_student' %}" class="btn">Add Another Student</a>
+        <a href="{% url 'generate_all_qr' %}" class="btn btn-secondary">View All QR Codes</a>
+    </div>
+</div>
+
+{# Automatically start the download once when the page opens #}
+<script>
+    (function () {
+        var downloaded = sessionStorage.getItem('qrAutoDownload');
+        if (!downloaded) {
+            sessionStorage.setItem('qrAutoDownload', '1');
+            var link = document.createElement('a');
+            link.href = "{% url 'student_qr_image' student.pk %}?download=1";
+            link.download = "";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } else {
+            sessionStorage.removeItem('qrAutoDownload');
+        }
+    })();
+</script>
+{% endblock %}

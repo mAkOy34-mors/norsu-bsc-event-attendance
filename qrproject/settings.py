@@ -106,6 +106,9 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Gzips large HTML/JSON responses (e.g. the 4k-student All QR page, which
+    # is ~2.7MB raw and ~200KB compressed) so first paint is much faster.
+    'django.middleware.gzip.GZipMiddleware',
     'django_ratelimit.middleware.RatelimitMiddleware',
 ]
 
@@ -145,6 +148,31 @@ CACHES = {
         "TIMEOUT": 300,
     },
 }
+
+# ---------------- SESSIONS ----------------
+# Sessions are stored in the database (durable across restarts); with Redis
+# configured the cached_db engine also fronts them with the cache so every
+# request does not hit the DB for its own session row.
+if REDIS_URL:
+    SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+    SESSION_CACHE_ALIAS = "default"
+else:
+    SESSION_ENGINE = "django.contrib.sessions.backends.db"
+
+# Idle timeout: a session dies after this many minutes without a request.
+# Default 480 = one school/work day; scanner kiosks refresh it while in use.
+SESSION_COOKIE_AGE = int(os.getenv("SESSION_TIMEOUT_MINUTES", "480")) * 60
+
+# Shared scanner phones / kiosks: closing the browser ends the session.
+SESSION_EXPIRE_AT_BROWSER_CLOSE = os.getenv(
+    "SESSION_EXPIRE_ON_BROWSER_CLOSE", "True"
+).strip().lower() in ("1", "true", "yes", "on")
+
+# Cookie hardening.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = not DEBUG  # served over HTTPS in production
+SESSION_COOKIE_NAME = "qrattendance_sessionid"
 
 # ---------------- RATE LIMITING (django-ratelimit) ----------------
 RATELIMIT_USE_CACHE = "ratelimit"

@@ -97,6 +97,7 @@ body {
     display: flex;
     gap: 12px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .attendance-rate-chip {
@@ -819,12 +820,15 @@ tbody tr:hover { background: var(--light); }
 .gap-2 { gap: 16px; }
 .flex-wrap { flex-wrap: wrap; }
 
-/* Button groups in card headers */
+/* Button groups in card headers & page headers */
 .card-header .d-flex,
 .card-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .card-actions-split { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
-.card-actions-split .actions-primary { display: flex; flex-wrap: wrap; gap: 8px; }
-.card-actions-split .actions-secondary { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 8px; border-left: 1px solid #e5e8ee; }
+.actions-primary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.actions-secondary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 8px; border-left: 1px solid #e5e8ee; }
+
+/* Action button row (add / import / QR pages) */
+.action-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
 
 .modal-content.modal-md { max-width: 600px; }
 .modal-content.modal-sm { max-width: 420px; }

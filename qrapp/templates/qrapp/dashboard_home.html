@@ -111,6 +111,12 @@
                     <p>Create QR codes</p>
                 </a>
 
+                <a href="{% url 'generate_all_qr' %}" class="action-card">
+                    <i class="fas fa-images"></i>
+                    <h4>View All QR Codes</h4>
+                    <p>Browse & download every student's QR</p>
+                </a>
+
                 <a href="{% url 'export_students' %}?format=xlsx" class="action-card">
                     <i class="fas fa-download"></i>
                     <h4>Export Data</h4>
@@ -152,6 +158,7 @@
     {{ chart_data|json_script:"dashboard-chart-data" }}
     <!-- Live Logs modal (opened from the sidebar button) -->
     {% include 'qrapp/partials/live_logs.html' %}
+    <script src="{% static 'qrapp/js/session_watch.js' %}"></script>
     <script src="{% static 'qrapp/js/chime.js' %}"></script>
     <script src="{% static 'qrapp/js/dashboard_home.js' %}" defer></script>
 </body>

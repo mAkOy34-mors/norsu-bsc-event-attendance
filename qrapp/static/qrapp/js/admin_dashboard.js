@@ -283,13 +283,144 @@ function approveUser(userId, username) {
     }, function(response) {
         if (response.success) {
             notify.success('User approved', response.message);
-            setTimeout(() => location.reload(), 900);
+            // Inline update — no page reload. Remove the pending chip,
+            // bump the counters, and flip the row's status badge.
+            const chip = document.querySelector(`.pending-chip [data-user-id="${userId}"]`);
+            const chipCard = chip ? chip.closest('.pending-chip') : null;
+            if (chipCard) chipCard.remove();
+            const stat = document.querySelector('#approve .stat-warning .stat-value');
+            if (stat) stat.textContent = Math.max(parseInt(stat.textContent, 10) - 1, 0);
+            const row = document.querySelector(`#usersTableBody tr[data-user-id="${userId}"]`);
+            if (row) {
+                const statusCell = row.cells[3];
+                if (statusCell) {
+                    statusCell.innerHTML = '<span class="badge badge-success">Active</span>';
+                }
+            }
+            hideEmptyPendingNotice();
         } else {
             notify.error('Could not approve user', response.error);
         }
     }).fail(function() {
         notify.error('Network error', 'Please try again.');
     });
+}
+
+// The approve tab polls for new registrations so the admin sees them
+// without refreshing. Polling runs only while the tab is visible.
+(function () {
+    const approveTab = document.getElementById('approve');
+    if (!approveTab) return;
+
+    const POLL_MS = 4000;
+    const list = approveTab.querySelector('.pending-list');
+    if (!list) {
+        // No pending users were server-rendered; create the containers so
+        // live updates still have somewhere to land.
+        const section = approveTab.querySelector('.card-body');
+        if (!section) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'pending-approvals';
+        wrap.innerHTML = '<h4 class="pending-approvals-title"><i class="fas fa-exclamation-triangle"></i> Pending Approvals (<span id="pendingApprovalsCount">0</span>)</h4><div class="pending-list"></div>';
+        const tableWrap = section.querySelector('.table-container');
+        section.insertBefore(wrap, tableWrap || null);
+    }
+
+    let timer = null;
+    let seenIds = null;   // null = first poll seeds silently
+    let lastSignature = null;   // skip DOM rewrites while nothing changed
+
+    function escapeHtml(s) {
+        const div = document.createElement('div');
+        div.textContent = s == null ? '' : String(s);
+        return div.innerHTML;
+    }
+
+    function chipHtml(user) {
+        return `
+        <div class="pending-chip">
+            <div class="user-avatar user-avatar-sm user-avatar-pending">
+                ${escapeHtml(user.username.slice(0, 2).toUpperCase())}
+            </div>
+            <div>
+                <div class="user-name">${escapeHtml(user.username)}</div>
+                <div class="form-hint">${escapeHtml(user.email || '-')}</div>
+            </div>
+            <button type="button" class="btn btn-success btn-sm" data-action="approve-user"
+                    data-user-id="${user.id}" data-user-name="${escapeHtml(user.username)}">
+                <i class="fas fa-check"></i> Approve
+            </button>
+        </div>`;
+    }
+
+    function refresh(data) {
+        const wrap = approveTab.querySelector('.pending-approvals');
+        const list = approveTab.querySelector('.pending-list');
+        const stat = approveTab.querySelector('.stat-warning .stat-value');
+        const active = approveTab.querySelector('.stat-success .stat-value');
+        const total = approveTab.querySelector('.stat-info .stat-value');
+        const title = approveTab.querySelector('.pending-approvals-title');
+
+        if (stat) stat.textContent = data.count;
+        if (active) active.textContent = data.active_users;
+        if (total) total.textContent = data.total_users;
+
+        if (data.count === 0) {
+            if (wrap) wrap.style.display = 'none';
+            if (list) list.innerHTML = '';
+        } else {
+            if (wrap) wrap.style.display = '';
+            if (title) {
+                const t = title.querySelector('i');
+                title.innerHTML = '';
+                if (t) title.appendChild(t);
+                title.appendChild(document.createTextNode(` Pending Approvals (${data.count})`));
+            }
+            if (list) list.innerHTML = data.pending.map(chipHtml).join('');
+        }
+    }
+
+    async function poll() {
+        if (document.hidden || !approveTab.classList.contains('active')) return;
+        try {
+            const res = await fetch(appUrls.pendingUsers, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                cache: 'no-store',
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.success) return;
+
+            // Rewrite the chip list only when the pending set actually
+            // changed — an unchanged re-render would wipe Approve buttons
+            // mid-click every 4 seconds.
+            const signature = data.pending.map(u => u.id).join(',');
+            if (signature !== lastSignature) {
+                refresh(data);
+                lastSignature = signature;
+            }
+
+            if (seenIds !== null) {
+                const freshIds = data.pending.map(u => u.id).filter(id => !seenIds.has(id));
+                if (freshIds.length && window.chime) window.chime.ring();
+            }
+            seenIds = new Set(data.pending.map(u => u.id));
+        } catch (err) {
+            /* transient — next poll retries */
+        }
+    }
+
+    timer = setInterval(poll, POLL_MS);
+})();
+
+function hideEmptyPendingNotice() {
+    // After the last chip is approved inline, collapse the empty section.
+    const wrap = document.querySelector('#approve .pending-approvals');
+    if (wrap && !wrap.querySelector('.pending-chip')) {
+        wrap.style.display = 'none';
+        const stat = document.querySelector('#approve .stat-warning .stat-value');
+        if (stat) stat.textContent = '0';
+    }
 }
 
 // ==================== STUDENT MANAGEMENT FUNCTIONS ====================
@@ -383,7 +514,12 @@ function submitAddStudent() {
     }, function(response) {
         if (response.success) {
             notify.success('Student added', response.message || 'The student was added successfully.');
-            setTimeout(() => location.reload(), 900);
+            if (response.qr_page_url) {
+                // Show the new student's QR code right away (auto-downloads once).
+                setTimeout(() => { window.location.href = response.qr_page_url; }, 900);
+            } else {
+                setTimeout(() => location.reload(), 900);
+            }
         } else {
             notify.error('Could not add student', response.error || 'Failed to add student');
         }
