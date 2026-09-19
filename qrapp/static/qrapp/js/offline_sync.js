@@ -191,12 +191,22 @@
                     self._notify();
                     setTimeout(postNext, 200);
                 }).fail(function (xhr, textStatus) {
-                    if (isNetworkFailure(xhr.status, textStatus) || textStatus === 'timeout') {
-                        // Keep item; try again later
+                    var status = xhr.status;
+                    // 429 = rate limited, 5xx = server hiccup. Both clear up on
+                    // their own, so the scan MUST stay queued: dropping it here
+                    // silently destroyed attendance records (the old code
+                    // treated every response-bearing error as permanent).
+                    var transient = isNetworkFailure(status, textStatus)
+                        || textStatus === 'timeout'
+                        || status === 429
+                        || status >= 500;
+                    if (transient) {
+                        // Keep item; the periodic retry picks it up later.
                         finish();
                         return;
                     }
-                    // Non-network error (4xx/5xx with response) — drop to avoid stuck queue
+                    // Permanent rejection (400/403/404 …) — retrying can never
+                    // succeed, so drop it and move on.
                     var remaining = loadQueue().filter(function (x) { return x.id !== item.id; });
                     saveQueue(remaining);
                     self._notify();

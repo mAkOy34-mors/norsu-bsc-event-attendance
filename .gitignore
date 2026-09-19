@@ -32,6 +32,8 @@ db.sqlite3.backup-*
 
 # ---- Logs, temp files & scratch scripts ----
 *.log
+server_errors.log*
+
 temp.pdf
 temp_upload.*
 temp_*.pdf

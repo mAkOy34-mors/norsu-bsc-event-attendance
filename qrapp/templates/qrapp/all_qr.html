@@ -10,12 +10,12 @@
         <p>Browse, print and download the QR code of every student</p>
     </div>
     <div class="header-actions qr-header-actions">
-        <button type="button" data-action="print-page" class="btn btn-primary"
+        <button type="button" data-action="print-page" class="btn btn-secondary"
                 title="Print every QR code on this page">
-            <i class="fas fa-print"></i> Print All QR Codes
+            <i class="fas fa-print"></i> Print All
         </button>
         <a href="{% url 'download_qr_pdf' %}{% if search %}?search={{ search|urlencode }}{% endif %}"
-           class="btn btn-success" title="Download every QR code as a PDF file">
+           class="btn btn-primary" title="Download every QR code as a PDF file">
             <i class="fas fa-file-pdf"></i> Download as PDF
         </a>
         <a href="{% url 'add_student' %}" class="btn btn-success">

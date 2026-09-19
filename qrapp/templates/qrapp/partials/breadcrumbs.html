@@ -16,7 +16,26 @@
         <li><a href="{% url 'manage_colleges' %}">Manage Colleges</a></li>
         <li aria-current="page">Programs</li>
         {% elif url_name == 'generate_all_qr' %}
+        <li><a href="{% url 'admin_dashboard' %}?section=students">Students</a></li>
         <li aria-current="page">All QR Codes</li>
+        {% elif url_name == 'add_student' %}
+        <li><a href="{% url 'admin_dashboard' %}?section=students">Students</a></li>
+        <li aria-current="page">Add Student</li>
+        {% elif url_name == 'edit_student' %}
+        <li><a href="{% url 'admin_dashboard' %}?section=students">Students</a></li>
+        <li aria-current="page">Edit Student</li>
+        {% elif url_name == 'delete_student' %}
+        <li><a href="{% url 'admin_dashboard' %}?section=students">Students</a></li>
+        <li aria-current="page">Delete Student</li>
+        {% elif url_name == 'upload_pdf' %}
+        <li><a href="{% url 'admin_dashboard' %}?section=students">Students</a></li>
+        <li aria-current="page">Import Students</li>
+        {% elif url_name == 'import_issues' %}
+        <li><a href="{% url 'admin_dashboard' %}?section=students">Students</a></li>
+        <li aria-current="page">Import Issues</li>
+        {% elif url_name == 'approve_users' %}
+        <li><a href="{% url 'admin_dashboard' %}?section=approve">User Approval</a></li>
+        <li aria-current="page">Approve Users</li>
         {% elif url_name == 'scanner' %}
         <li aria-current="page">Scanner</li>
         {% elif url_name == 'attendance_records' %}

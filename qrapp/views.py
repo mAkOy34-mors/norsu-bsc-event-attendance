@@ -5,6 +5,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
+from django.db import OperationalError, transaction
 from django.db.models import Q, Count, Prefetch
 from django.utils import timezone
 from django.conf import settings
@@ -53,7 +54,21 @@ def client_username(group, request):
     user = getattr(request, "user", None)
     if user is not None and user.is_authenticated:
         return user.username
-    return request.META.get("REMOTE_ADDR", "")
+    return client_ip(group, request)
+
+
+def client_ip(group, request):
+    """Rate-limit key: the REAL client IP.
+
+    Through the Cloudflare Tunnel every request arrives from 127.0.0.1 —
+    without this, ALL scanner phones share one rate-limit bucket and event-
+    morning logins get blocked 5-at-a-time. Cloudflare sets
+    CF-Connecting-IP on tunnel traffic; direct LAN requests fall back to
+    REMOTE_ADDR."""
+    return (
+        request.META.get("HTTP_CF_CONNECTING_IP")
+        or request.META.get("REMOTE_ADDR", "")
+    )
 
 
 def ratelimited_view(request, exception=None):
@@ -61,7 +76,11 @@ def ratelimited_view(request, exception=None):
     wants_json = (
             request.headers.get("x-requested-with") == "XMLHttpRequest"
             or request.path.startswith("/ajax/")
-            or request.path == "/save_scan/"
+            # The scan endpoint is mounted at /qrapp/save_scan/ and is called
+            # with fetch() (no X-Requested-With header), so matching the bare
+            # path never fired. A rate-limited scanner used to get the HTML
+            # page, which its JSON parser rejected as a "network error".
+            or request.path.endswith("/save_scan/")
     )
     if wants_json:
         return JsonResponse(
@@ -642,16 +661,107 @@ def admin_dashboard(request):
 # ---------------- SCANNER ----------------
 @login_required
 def scanner_view(request):
+    from .models import College, Program, Major
+
     events = Event.objects.filter(is_active=True).order_by("-is_current", "-event_date", "title")
     current_event = events.filter(is_current=True).first() or events.filter(event_date=date.today()).first()
+    # Walk-in registration catalog ships with the page itself: three tiny
+    # queries at render time and the modal dropdowns work with zero AJAX,
+    # immune to session hiccups or cached scripts.
+    catalog = {
+        "colleges": [
+            {"code": c.code, "name": c.name}
+            for c in College.objects.filter(is_active=True).order_by("code")
+        ],
+        "programs": [
+            {"college": p.college.code, "code": p.code, "name": p.name}
+            for p in Program.objects.filter(is_active=True, college__is_active=True)
+            .select_related("college").order_by("college__code", "code")
+        ],
+        "majors": [
+            {"program": m.program.code, "code": m.code, "name": m.name}
+            for m in Major.objects.filter(is_active=True, program__is_active=True)
+            .select_related("program").order_by("program__code", "code")
+        ],
+    }
     scanner_config = {
         "scan_url": reverse("save_scan"),
+        "add_student_url": reverse("scanner_add_student"),
+        "catalog": catalog,
         "csrfToken": get_token(request),
     }
     return render(request, "qrapp/scanner.html", {
         "events": events,
         "current_event": current_event,
         "scanner_config": scanner_config,
+    })
+
+
+# Walk-in registration from the scanner page: when a scan hits an
+# unregistered student, the operator can register them on the spot and the
+# scanner auto check-ins them right after.
+@ratelimit(key=client_username, rate='30/m', method=ratelimit.UNSAFE, block=True)
+@login_required
+def scanner_add_student(request):
+    if request.method != "POST" or request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return JsonResponse({"success": False, "error": "Invalid request"}, status=400)
+
+    from .college_program import resolve_college_and_program, resolve_major
+
+    student_id = (request.POST.get("student_id") or "").strip()
+    name = (request.POST.get("name") or "").strip()
+    sex = (request.POST.get("sex") or "").strip().upper()
+    year_raw = (request.POST.get("year") or "").strip()
+    college_code = (request.POST.get("college") or "").strip()
+    program_code = (request.POST.get("program") or "").strip()
+    major_value = (request.POST.get("major") or "").strip()
+
+    if not student_id or not name or not college_code or not program_code or not year_raw:
+        return JsonResponse({"success": False, "error": "All fields except major are required."})
+
+    if len(student_id) > 20:
+        return JsonResponse({"success": False, "error": "Student ID must be 20 characters or fewer."})
+
+    sex = sex[:1] if sex[:1] in ("M", "F") else ""
+    if not sex:
+        return JsonResponse({"success": False, "error": "Please choose a sex."})
+
+    try:
+        year = int(year_raw)
+        if not 1 <= year <= 9:
+            raise ValueError
+    except ValueError:
+        return JsonResponse({"success": False, "error": "Year level must be a number between 1 and 9."})
+
+    existing = Student.objects.filter(student_id__iexact=student_id).first()
+    if existing is not None:
+        # Already registered: tell the scanner to just check them in.
+        return JsonResponse({
+            "success": False,
+            "error": "already_registered",
+            "message": f"{existing.name} is already registered.",
+            "student": {"student_id": existing.student_id, "name": existing.name},
+        })
+
+    college, program = resolve_college_and_program(college_code, program_code)
+    if program is None:
+        return JsonResponse({"success": False, "error": "Program not found. Pick it from the list."})
+    college = program.college  # program is authoritative, mirrors add_student
+    major = resolve_major(program, major_value, create=False)
+
+    student = Student.objects.create(
+        student_id=student_id,
+        name=name,
+        sex=sex,
+        college=college,
+        program=program,
+        year=year,
+        major=major,
+    )
+    return JsonResponse({
+        "success": True,
+        "message": f"{student.name} registered ({program.code}).",
+        "student": {"student_id": student.student_id, "name": student.name},
     })
 
 
@@ -696,9 +806,132 @@ def get_students_data(request):
     return JsonResponse({"success": True, "data": data})
 
 
+# A scanner may report the time it originally read the QR code. That is what
+# makes a replayed scan (flaky link, queued offline scan) keep its real time,
+# so the feature is kept -- but the server clock stays authoritative. A device
+# timestamp is honoured only when it is in the past and no older than this
+# grace window, so a wrong or doctored phone clock can neither stamp
+# attendance in the future nor backdate it far into the past.
+ATTENDANCE_DEVICE_TIME_GRACE = timedelta(
+    seconds=int(os.getenv("ATTENDANCE_DEVICE_TIME_GRACE_SECONDS", str(12 * 3600)))
+)
+
+
+def server_localdate():
+    """Today's date on the SERVER, in the project's TIME_ZONE.
+
+    ``timezone.localdate()`` cannot be used directly: on Django 5.x it calls
+    ``localtime()``, which raises ValueError for naive datetimes, and this
+    project runs with ``USE_TZ = False`` so ``timezone.now()`` is naive. This
+    helper is correct in both modes, and it is what keeps the event-day check
+    tied to the server clock instead of a scanner's phone clock.
+    """
+    current = timezone.now()
+    if timezone.is_aware(current):
+        return timezone.localdate(current)
+    return current.date()
+
+
+def resolve_scan_timestamp(device_time_str, server_now=None):
+    """Return the timestamp to store for a scan, preferring the server clock.
+
+    ``server_now`` defaults to ``timezone.now()``.
+    """
+    server_now = server_now or timezone.now()
+
+    raw = (device_time_str or "").strip()
+    if not raw:
+        return server_now
+
+    try:
+        device_time = datetime.fromisoformat(raw)
+    except ValueError:
+        return server_now
+
+    # Never mix naive and aware datetimes: the comparison below would raise
+    # TypeError (and 500 the scan) if USE_TZ ever changes.
+    if timezone.is_aware(device_time) and timezone.is_naive(server_now):
+        device_time = timezone.make_naive(device_time, timezone.get_current_timezone())
+    elif timezone.is_naive(device_time) and timezone.is_aware(server_now):
+        device_time = timezone.make_aware(device_time, timezone.get_current_timezone())
+
+    if device_time > server_now:
+        # Clock running ahead -- trust the server.
+        return server_now
+    if server_now - device_time > ATTENDANCE_DEVICE_TIME_GRACE:
+        # Too old to be a legitimate replay -- trust the server.
+        return server_now
+    return device_time
+
+
+def _lock_scan_target(
+    student_id,
+    event,
+    now,
+    manual_status="",
+    event_label="",
+    source=Attendance.SOURCE_CAMERA,
+    scanned_by=None,
+):
+    """Persist one scan inside a transaction holding a per-student row lock.
+
+    Returns ``(outcome, student)`` where outcome is one of: ``student_missing``,
+    ``manual``, ``in``, ``out``, ``too_soon``, ``in_again``.
+    """
+    with transaction.atomic():
+        # Lock the STUDENT row (never the whole Attendance table). A student
+        # row always exists, whereas "no attendance row yet" has nothing to
+        # lock -- and that is exactly the case that used to produce duplicate
+        # INs. Per-student locking keeps different students fully parallel;
+        # only two scanners aiming at the SAME student serialise.
+        student = (
+            Student.objects.select_for_update().filter(student_id=student_id).first()
+        )
+        if student is None:
+            return "student_missing", None
+
+        def insert(status):
+            return Attendance.objects.create(
+                student=student,
+                event=event,
+                status=status,
+                timestamp=now,
+                event_label=event_label,
+                scanned_by=scanned_by,
+                source=source,
+            )
+
+        if manual_status:
+            insert(manual_status)
+            return "manual", student
+
+        # Only the latest record is needed to decide IN/OUT. Loading the
+        # student's whole event history (ORDER BY timestamp + filesort) was
+        # wasted work on every scan. ORDER BY -timestamp LIMIT 1 rides the
+        # (student, event, timestamp) index added in migration 0020.
+        last_record = (
+            Attendance.objects.filter(student=student, event=event)
+            .only("status", "timestamp")
+            .order_by("-timestamp")
+            .first()
+        )
+        if last_record is None:
+            insert("IN")
+            return "in", student
+        if last_record.status == "IN":
+            if now - last_record.timestamp < timedelta(hours=1):
+                return "too_soon", student
+            insert("OUT")
+            return "out", student
+        insert("IN")
+        return "in_again", student
+
+
 # Scan endpoint: generous enough for a queue of students (1 scan / 2s per
 # scanner), tight enough to stop scripted flooding of the attendance table.
-@ratelimit(key=client_username, rate='30/m', method='POST', block=True)
+# Raised 30 -> 60 per scanner because a queued-scan flush posts sequentially at
+# ~5 requests/second and would otherwise exhaust a 30/m budget in seconds.
+@ratelimit(key=client_username, rate='60/m', method='POST', block=True)
 @login_required
 def save_scan(request):
     if request.method != "POST":
@@ -723,7 +956,11 @@ def save_scan(request):
         })
 
     device_time_str = request.POST.get("local_time")
-    manual_status = request.POST.get("manual_status")
+    manual_status = (request.POST.get("manual_status") or "").strip().upper()
+    if manual_status not in ("IN", "OUT"):
+        # status is a choice field: never let an arbitrary string reach the
+        # table (Attendance.objects.create bypasses field validation).
+        manual_status = ""
     event_label = (request.POST.get("event_label") or "").strip()[:200]
     event_id = (request.POST.get("event_id") or "").strip()
     source = (request.POST.get("source") or "").strip().lower()
@@ -735,7 +972,6 @@ def save_scan(request):
     if source not in valid_sources:
         source = Attendance.SOURCE_MANUAL if manual_status else Attendance.SOURCE_CAMERA
 
-    event = None
     if not event_id:
         return JsonResponse({
             "success": False,
@@ -754,7 +990,7 @@ def save_scan(request):
     # Scanning is only allowed on the event's own day. Checked against the
     # server's real date (not the device-supplied local_time) so a wrong or
     # doctored phone clock cannot backfill attendance for other days.
-    server_today = datetime.now().date()
+    server_today = server_localdate()
     if event.event_date != server_today:
         return JsonResponse({
             "success": False,
@@ -769,94 +1005,92 @@ def save_scan(request):
     if not event_label:
         event_label = event.title
 
+    # Server clock is authoritative; a device timestamp is only honoured when it
+    # is a plausible recent past moment (a replayed/queued scan).
+    now = resolve_scan_timestamp(device_time_str)
+    scanned_by = request.user if request.user.is_authenticated else None
+
     try:
-        student = Student.objects.get(student_id=student_id)
-    except Student.DoesNotExist:
+        # Read-then-write happens in one transaction holding a per-student row
+        # lock, so the IN/OUT decision and the INSERT that follows cannot be
+        # split by a concurrent scan of the same student.
+        outcome, student = _lock_scan_target(
+            student_id=student_id,
+            event=event,
+            now=now,
+            manual_status=manual_status,
+            event_label=event_label,
+            source=source,
+            scanned_by=scanned_by,
+        )
+    except OperationalError:
+        # Row-lock wait timeout or deadlock: the database refused rather than
+        # risk an inconsistent IN/OUT decision. Ask the scanner to scan again.
         return JsonResponse({
             "success": False,
+            "message": "The scanner is busy, please scan again.",
+            "color": "warning",
+        })
+
+    if outcome == "student_missing":
+        # Machine-readable marker: the scanner page pops its walk-in
+        # registration modal on this code, then auto check-ins the student.
+        return JsonResponse({
+            "success": False,
+            "error": "student_not_found",
+            "student_id": student_id,
             "message": "Student not found.",
             "color": "danger"
         })
 
-    now = datetime.now()
-    if device_time_str:
-        try:
-            now = datetime.fromisoformat(device_time_str)
-        except ValueError:
-            now = datetime.now()
-
-    today = now.date()
-    if event:
-        scope_records = Attendance.objects.filter(student=student, event=event).order_by("timestamp")
-    else:
-        scope_records = Attendance.objects.filter(
-            student=student,
-            timestamp__date=today
-        ).order_by("timestamp")
-
-    def create_attendance(status):
-        return Attendance.objects.create(
-            student=student,
-            event=event,
-            status=status,
-            timestamp=now,
-            event_label=event_label,
-            scanned_by=request.user if request.user.is_authenticated else None,
-            source=source,
-        )
-
+    stamp = now.strftime('%I:%M:%S %p')
     event_note = f" ({event.title})" if event else ""
 
-    if manual_status:
-        create_attendance(manual_status)
+    if outcome == "manual":
         return JsonResponse({
             "success": True,
-            "message": f"{student.name} manually marked {manual_status}{event_note} at {now.strftime('%I:%M:%S %p')}",
+            "message": f"{student.name} manually marked {manual_status}{event_note} at {stamp}",
             "status": manual_status,
             "color": "success" if manual_status == "IN" else "info",
             "student_name": student.name,
-            "time": now.strftime('%I:%M:%S %p')
+            "time": stamp
         })
 
-    if not scope_records.exists():
-        create_attendance("IN")
+    if outcome == "too_soon":
         return JsonResponse({
-            "success": True,
-            "message": f"{student.name} marked IN{event_note} at {now.strftime('%I:%M:%S %p')}",
-            "status": "IN",
-            "color": "success",
-            "student_name": student.name,
-            "time": now.strftime('%I:%M:%S %p')
+            "success": False,
+            "message": f"{student.name} cannot log OUT yet. Wait at least 1 hour.",
+            "color": "warning",
+            "student_name": student.name
         })
 
-    last_record = scope_records.last()
-
-    if last_record.status == "IN":
-        if now - last_record.timestamp < timedelta(hours=1):
-            return JsonResponse({
-                "success": False,
-                "message": f"{student.name} cannot log OUT yet. Wait at least 1 hour.",
-                "color": "warning",
-                "student_name": student.name
-            })
-        create_attendance("OUT")
+    if outcome == "out":
         return JsonResponse({
             "success": True,
-            "message": f"{student.name} marked OUT{event_note} at {now.strftime('%I:%M:%S %p')}",
+            "message": f"{student.name} marked OUT{event_note} at {stamp}",
             "status": "OUT",
             "color": "info",
             "student_name": student.name,
-            "time": now.strftime('%I:%M:%S %p')
+            "time": stamp
         })
 
-    create_attendance("IN")
+    if outcome == "in_again":
+        return JsonResponse({
+            "success": True,
+            "message": f"{student.name} marked IN again{event_note} at {stamp}",
+            "status": "IN",
+            "color": "success",
+            "student_name": student.name,
+            "time": stamp
+        })
+
     return JsonResponse({
         "success": True,
-        "message": f"{student.name} marked IN again{event_note} at {now.strftime('%I:%M:%S %p')}",
+        "message": f"{student.name} marked IN{event_note} at {stamp}",
         "status": "IN",
         "color": "success",
         "student_name": student.name,
-        "time": now.strftime('%I:%M:%S %p')
+        "time": stamp
     })
 
 
@@ -1443,8 +1677,8 @@ def _dashboard_redirect_for(user):
     return redirect('scanner')
 
 
-@ratelimit(key='ip', rate='10/h', method='POST', block=True)
-@ratelimit(key='ip', rate='3/m', method='POST', block=True)
+@ratelimit(key=client_ip, rate='10/h', method='POST', block=True)
+@ratelimit(key=client_ip, rate='3/m', method='POST', block=True)
 def register_view(request):
     # Opening /register/ in another tab while already signed in should not
     # show the form again — the session (cookie) already identifies the user.
@@ -1536,8 +1770,8 @@ def ajax_pending_users(request):
 
 
 # Brute-force protection: strict per-IP burst + hourly caps on login POSTs.
-@ratelimit(key='ip', rate='30/h', method='POST', block=True)
-@ratelimit(key='ip', rate='5/m', method='POST', block=True)
+@ratelimit(key=client_ip, rate='30/h', method='POST', block=True)
+@ratelimit(key=client_ip, rate='5/m', method='POST', block=True)
 def login_view(request):
     # Already signed in (e.g. the login URL is opened in a second tab)?
     # The Django session cookie already identifies the user — go straight
@@ -2064,7 +2298,7 @@ def manage_colleges(request):
 
 
 @ratelimit(key=client_username, rate='120/m', block=True)
-@staff_member_required
+@login_required
 def get_colleges_json(request):
     """AJAX endpoint to get colleges for dropdowns (cached)."""
     from .models import College
@@ -2100,7 +2334,7 @@ def get_colleges_json(request):
 
 
 @ratelimit(key=client_username, rate='120/m', block=True)
-@staff_member_required
+@login_required
 def get_programs_json(request, college_code):
     """AJAX endpoint to get programs for a specific college (cached)."""
     from .models import College, Program
@@ -2636,7 +2870,7 @@ def get_events_json(request):
 
 
 @ratelimit(key=client_username, rate='120/m', block=True)
-@staff_member_required
+@login_required
 def get_majors_json(request, program_code):
     """AJAX endpoint to get majors for a specific program (cached)."""
     program = Program.objects.filter(code__iexact=program_code).select_related("college").first()

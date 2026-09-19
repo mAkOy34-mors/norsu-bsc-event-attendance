@@ -55,6 +55,7 @@ urlpatterns = [
     # User management
     path('ajax/manage-users/', views.manage_users, name='manage_users'),
     path('ajax/pending-users/', views.ajax_pending_users, name='ajax_pending_users'),
+    path('ajax/scanner-add-student/', views.scanner_add_student, name='scanner_add_student'),
     path('ajax/scans-since/', views.scans_since, name='scans_since'),
     path('ajax/sidebar-logs/', views.ajax_sidebar_logs, name='ajax_sidebar_logs'),
 

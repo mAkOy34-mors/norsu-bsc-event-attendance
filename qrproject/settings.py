@@ -239,8 +239,19 @@ else:
                 "PASSWORD": os.getenv("DB_PASSWORD", ""),
                 "HOST": os.getenv("DB_HOST", "127.0.0.1"),
                 "PORT": os.getenv("DB_PORT", "3306"),
+                # Reuse each connection across requests instead of doing a full
+                # TCP connect + auth handshake + "SET sql_mode" on every single
+                # scan. With ~30 scanners hitting save_scan concurrently the
+                # per-request connect cost was pure overhead. One connection is
+                # held per Waitress thread, and stale ones (MariaDB restarted)
+                # are detected because we enable health checks.
+                "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+                "CONN_HEALTH_CHECKS": True,
                 "OPTIONS": {
                     "charset": "utf8mb4",
+                    # PyMySQL sends init_command as a single statement, so
+                    # any extra session tuning lives in
+                    # qrapp.apps._tune_mysql_session (connection_created).
                     "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
                 },
             }
@@ -352,6 +363,30 @@ MEDIA_URL = "/media/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ---------------- LOGGING ----------------
+# Errors (unhandled exceptions, DB failures) go to the console Waitress
+# already shows, and to a rotating file so event-day problems can be
+# diagnosed after the fact without drowning in debug noise.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "event": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "event"},
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(BASE_DIR, "server_errors.log"),
+            "maxBytes": 2 * 1024 * 1024,
+            "backupCount": 3,
+            "formatter": "event",
+            "delay": True,  # don't create the file until the first error
+        },
+    },
+    "root": {"handlers": ["console", "file"], "level": "WARNING"},
+}
 
 # QR security: new QR codes are signed. Set True only after regenerating all printed QRs.
 QR_REQUIRE_SIGNATURE = os.getenv("QR_REQUIRE_SIGNATURE", "False").strip().lower() in (

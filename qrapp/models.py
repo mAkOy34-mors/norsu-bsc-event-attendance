@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -125,7 +127,13 @@ class Event(models.Model):
     """Campus/school event or session used for attendance scanning."""
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True, default="")
-    event_date = models.DateField(default=timezone.localdate)
+    event_date = models.DateField(
+        default=date.today,
+        help_text=(
+            "Day this event happens on. date.today (not timezone.localdate) "
+            "because Django 5.x localdate() raises ValueError when USE_TZ=False."
+        ),
+    )
     start_time = models.TimeField(null=True, blank=True)
     end_time = models.TimeField(null=True, blank=True)
     location = models.CharField(max_length=200, blank=True, default="")
@@ -225,9 +233,19 @@ class Attendance(models.Model):
 
     class Meta:
         ordering = ["-timestamp"]
+        indexes = [
+            # Hot path for save_scan(): "latest record for this student at this
+            # event", ordered by timestamp. Without this the DB either full-scans
+            # the student's history or does a filesort on every single scan.
+            models.Index(
+                fields=["student", "event", "timestamp"],
+                name="attend_stu_event_ts_idx",
+            ),
+            # Dashboard / calendar / export queries filter and sort on the
+            # timestamp column alone (e.g. timestamp__date ranges).
+            models.Index(fields=["timestamp"], name="attend_ts_idx"),
+        ]
 
-    def __str__(self):
-        return f"{self.student.name} - {self.status} @ {self.timestamp.strftime('%Y-%m-%d %I:%M %p')}"
     def __str__(self):
         return f"{self.student.name} - {self.status} @ {self.timestamp.strftime('%Y-%m-%d %I:%M %p')}"
 

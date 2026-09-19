@@ -919,3 +919,208 @@ h1 {
 .is-hidden {
   display: none !important;
 }
+/* ---------- WALK-IN REGISTRATION MODAL ---------- */
+.add-student-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    background: rgba(15, 35, 60, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.add-student-modal.is-open { display: flex; }
+
+.add-student-card {
+    background: #ffffff;
+    border: 1px solid #edf2f7;
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(15, 47, 79, 0.28);
+    width: min(560px, 100%);
+    max-height: min(86vh, 760px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: addStudentIn 0.22s ease;
+}
+
+@keyframes addStudentIn {
+    from { opacity: 0; transform: translateY(14px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.add-student-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 20px;
+    border-bottom: 1px solid #edf2f7;
+}
+
+.add-student-header h3 {
+    margin: 0;
+    font-family: 'Sora', 'Manrope', sans-serif;
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: #2d3436;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.add-student-header h3 i { color: #0984e3; }
+
+.add-student-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #64748b;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.add-student-close:hover {
+    background: #e7f2fc;
+    color: #2d3436;
+}
+
+.add-student-intro {
+    padding: 12px 20px 0;
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.add-student-card form {
+    padding: 14px 20px 18px;
+    overflow-y: auto;
+}
+
+.add-student-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+}
+
+.add-field label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #3f4d60;
+    margin-bottom: 4px;
+}
+
+.add-field input,
+.add-field select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid #d9e2ec;
+    border-radius: 9px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: #2d3436;
+    background: #fbfcfe;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.add-field input:focus,
+.add-field select:focus {
+    outline: none;
+    border-color: #0984e3;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(9, 132, 227, 0.15);
+}
+
+.add-student-error {
+    margin: 10px 0 0;
+    padding: 9px 12px;
+    border-radius: 9px;
+    background: #fdf4f4;
+    border: 1px solid #f0d0d0;
+    color: #b33a3a;
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+.add-student-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.add-student-btn-primary,
+.add-student-btn-secondary {
+    padding: 10px 18px;
+    border-radius: 9px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.add-student-btn-primary {
+    background: #0984e3;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(9, 132, 227, 0.3);
+}
+
+.add-student-btn-primary:hover { background: #0770c4; }
+.add-student-btn-primary:disabled { opacity: 0.65; cursor: wait; }
+
+.add-student-btn-secondary {
+    background: #f4f6f8;
+    color: #2d3436;
+    border-color: #e0e6ed;
+}
+
+.add-student-btn-secondary:hover { background: #edf0f4; }
+
+@media (max-width: 520px) {
+    .add-student-grid { grid-template-columns: 1fr; }
+}
+
+/* ---------- REGISTER STUDENT (walk-in) button ---------- */
+.register-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 12px;
+    padding: 11px 14px;
+    border: 1px solid rgba(0, 184, 148, 0.35);
+    border-radius: 9px;
+    background: rgba(0, 184, 148, 0.1);
+    color: #0b6e4f;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.register-btn:hover {
+    background: rgba(0, 184, 148, 0.18);
+    transform: translateY(-1px);
+}
+
+.register-hint {
+    margin-top: 6px;
+    font-size: 0.72rem;
+    color: #64748b;
+    text-align: center;
+}

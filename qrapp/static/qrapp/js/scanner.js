@@ -63,6 +63,21 @@
     manualStatus: $('#manualStatus'),
     manualTime: $('#manualTime'),
     manualSubmit: $('#manualSubmit'),
+    addModal: $('#addStudentModal'),
+    addForm: $('#addStudentForm'),
+    addId: $('#addStudentId'),
+    addName: $('#addStudentName'),
+    addSex: $('#addStudentSex'),
+    addYear: $('#addStudentYear'),
+    addCollege: $('#addStudentCollege'),
+    addProgram: $('#addStudentProgram'),
+    addMajorGroup: $('#addStudentMajorGroup'),
+    addMajor: $('#addStudentMajor'),
+    addError: $('#addStudentError'),
+    addSubmit: $('#addStudentSubmit'),
+    addClose: $('#addStudentClose'),
+    addCancel: $('#addStudentCancel'),
+    openRegisterBtn: $('#openRegisterBtn'),
   };
 
   // ------------------------------------------------------------------
@@ -398,6 +413,9 @@ function processScan(rawText, overrides = {}) {
     setResult('Scanning…', 'info');
     setStatusText('Scanning…', true);
     state.processing = true;
+    // Captured before the fetch: the response handler's own `status` const
+    // shadows these, and the walk-in path needs the original values.
+    const scanOverrides = { status: status, time: time };
 
     const scanUrl = CONFIG.scan_url || '/qrapp/save_scan/';
 
@@ -412,6 +430,19 @@ function processScan(rawText, overrides = {}) {
         .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
         .then(({ ok, data }) => {
             if (!ok || data.success === false || data.error) {
+                // Walk-in path: the scanned ID is not registered — offer
+                // on-the-spot registration, then auto check-in.
+                if (data && data.error === 'student_not_found' && data.student_id) {
+                    const sid = data.student_id;
+                    setResult('Not registered — register this student', 'warning');
+                    showNotification(
+                        `Student ${sid} is not registered. Register them to check in.`,
+                        'warning',
+                        'Not registered'
+                    );
+                    openAddStudentModal(sid, scanOverrides);
+                    return;
+                }
                 const msg = data.error || data.message || 'Scan failed';
                 const warning = data.color === 'warning';
                 showNotification(msg, warning ? 'warning' : 'error');
@@ -451,6 +482,176 @@ function processScan(rawText, overrides = {}) {
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop().split(';').shift();
     return '';
+  }
+
+  // ------------------------------------------------------------------
+  // Walk-in registration: scan an unregistered student -> modal ->
+  // register -> auto check-in.
+  // ------------------------------------------------------------------
+  let pendingWalkIn = null; // overrides to check in with after saving
+
+  function addAddError(msg) {
+    if (!els.addError) return;
+    els.addError.textContent = msg || '';
+    els.addError.hidden = !msg;
+  }
+
+  // The catalog (colleges/programs/majors) ships inside the page, so the
+  // dropdowns populate instantly and can never fail to load.
+  const CATALOG = CONFIG.catalog || { colleges: [], programs: [], majors: [] };
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s == null ? '' : String(s);
+    return div.innerHTML;
+  }
+
+  function optionList(valueLabel, items) {
+    return `<option value="">${valueLabel}</option>` +
+      items.map((it) => `<option value="${escapeHtml(it.value)}">${escapeHtml(it.label)}</option>`).join('');
+  }
+
+  function loadCollegeOptions() {
+    if (!els.addCollege) return;
+    els.addCollege.innerHTML = optionList(
+      '— Select college —',
+      CATALOG.colleges.map((c) => ({ value: c.code, label: `${c.code} — ${c.name}` }))
+    );
+  }
+
+  function loadProgramOptions() {
+    if (!els.addProgram) return;
+    const college = els.addCollege.value;
+    const programs = CATALOG.programs.filter((p) => p.college === college);
+    els.addProgram.disabled = !college;
+    if (!college) {
+      els.addProgram.innerHTML = '<option value="">Select college first</option>';
+    } else {
+      els.addProgram.innerHTML = optionList(
+        '— Select program —',
+        programs.map((p) => ({ value: p.code, label: `${p.code} — ${p.name}` }))
+      );
+    }
+    hideMajorGroup();
+  }
+
+  function loadMajorOptions() {
+    if (!els.addMajor || !els.addMajorGroup) return;
+    const program = els.addProgram.value;
+    const majors = CATALOG.majors.filter((m) => m.program === program);
+    els.addMajor.innerHTML = '<option value="">None</option>' +
+      majors.map((m) => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.code)} — ${escapeHtml(m.name)}</option>`).join('');
+    // Programs like BSA/BSAS/BSF have no majors: hide the field entirely.
+    els.addMajorGroup.hidden = !program || !majors.length;
+  }
+
+  function hideMajorGroup() {
+    if (els.addMajorGroup) els.addMajorGroup.hidden = true;
+    if (els.addMajor) els.addMajor.innerHTML = '<option value="">None</option>';
+  }
+
+  function openAddStudentModal(studentId, overrides) {
+    pendingWalkIn = { studentId: studentId, overrides: overrides || {} };
+    if (els.addId) els.addId.value = studentId || '';
+    if (els.addName) els.addName.value = '';
+    if (els.addSex) els.addSex.value = '';
+    if (els.addYear) els.addYear.value = '';
+    if (els.addCollege) els.addCollege.value = '';
+    if (els.addProgram) {
+      els.addProgram.innerHTML = '<option value="">Select college first</option>';
+      els.addProgram.disabled = true;
+    }
+    hideMajorGroup();
+    addAddError('');
+    if (els.addModal) {
+      els.addModal.classList.add('is-open');
+      els.addModal.setAttribute('aria-hidden', 'false');
+    }
+    // Refresh the college list on every open: cheap (cached endpoint) and
+    // it self-heals after any earlier network hiccup.
+    loadCollegeOptions();
+    if (els.addName) setTimeout(() => els.addName.focus(), 60);
+  }
+
+  function closeAddStudentModal() {
+    if (!els.addModal) return;
+    els.addModal.classList.remove('is-open');
+    els.addModal.setAttribute('aria-hidden', 'true');
+    pendingWalkIn = null;
+  }
+
+  function bindAddStudentModal() {
+    if (!els.addModal) return;
+
+    els.addCollege.addEventListener('change', loadProgramOptions);
+    els.addProgram.addEventListener('change', loadMajorOptions);
+
+    const close = () => closeAddStudentModal();
+    if (els.addClose) els.addClose.addEventListener('click', close);
+    if (els.addCancel) els.addCancel.addEventListener('click', close);
+    els.addModal.addEventListener('click', (e) => {
+      if (e.target === els.addModal) close();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && els.addModal.classList.contains('is-open')) close();
+    });
+
+    els.addForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const studentId = (els.addId.value || '').trim();
+      const name = (els.addName.value || '').trim();
+      if (!studentId || !name || !els.addSex.value || !els.addYear.value || !els.addCollege.value || !els.addProgram.value) {
+        addAddError('Please fill in all required fields.');
+        return;
+      }
+
+      els.addSubmit.disabled = true;
+      els.addSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+      addAddError('');
+
+      try {
+        const body = new FormData();
+        body.append('student_id', studentId);
+        body.append('name', name);
+        body.append('sex', els.addSex.value);
+        body.append('year', els.addYear.value);
+        body.append('college', els.addCollege.value);
+        body.append('program', els.addProgram.value);
+        body.append('major', els.addMajor ? els.addMajor.value : '');
+
+        const res = await fetch(CONFIG.add_student_url, {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': getCookie('csrftoken') || CONFIG.csrfToken || '',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: body,
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          closeAddStudentModal();
+          showNotification(data.message || 'Student registered.', 'success', 'Registered');
+          // Auto check-in: the student exists now, so the normal scan
+          // flow runs — including the bell for a successful check-in.
+          processScan(studentId, pendingWalkIn ? pendingWalkIn.overrides : {});
+          pendingWalkIn = null;
+        } else if (data.error === 'already_registered' && data.student) {
+          // Registered elsewhere meanwhile: just check them in.
+          closeAddStudentModal();
+          showNotification(data.message || 'Already registered.', 'info', 'Already registered');
+          processScan(data.student.student_id, pendingWalkIn ? pendingWalkIn.overrides : {});
+          pendingWalkIn = null;
+        } else {
+          addAddError(data.error || 'Could not register the student.');
+        }
+      } catch (err) {
+        addAddError('Network error — please try again.');
+      } finally {
+        els.addSubmit.disabled = false;
+        els.addSubmit.innerHTML = '<i class="fas fa-user-plus"></i> Register &amp; Check In';
+      }
+    });
   }
 
   // ------------------------------------------------------------------
@@ -631,6 +832,11 @@ function processScan(rawText, overrides = {}) {
           els.manualTime.value = `${hh}:${mm}`;
         }
       });
+    }
+
+    bindAddStudentModal();
+    if (els.openRegisterBtn) {
+        els.openRegisterBtn.addEventListener('click', () => openAddStudentModal('', {}));
     }
 
     // Manual entry

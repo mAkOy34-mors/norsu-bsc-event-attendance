@@ -159,6 +159,10 @@
                         <input type="time" id="manualTime">
                         <button id="manualSubmit"><i class="fas fa-paper-plane"></i> Submit</button>
                     </div>
+                    <button type="button" class="register-btn" id="openRegisterBtn">
+                        <i class="fas fa-user-plus"></i> Register Student
+                    </button>
+                    <p class="register-hint">For walk-ins with no QR code — register them here and they are checked in automatically.</p>
                 </div>
 
                 <div class="instructions">
@@ -179,5 +183,75 @@
     <script src="{% static 'qrapp/js/html5-qrcode.min.js' %}"></script>
     <script src="{% static 'qrapp/js/chime.js' %}"></script>
     <script src="{% static 'qrapp/js/scanner.js' %}" defer></script>
+
+    <!-- Walk-in registration modal (shown when a scan hits an unregistered student) -->
+    <div class="add-student-modal" id="addStudentModal" aria-hidden="true">
+        <div class="add-student-card" role="dialog" aria-modal="true" aria-label="Register student">
+            <div class="add-student-header">
+                <h3><i class="fas fa-user-plus"></i> Register Student</h3>
+                <button type="button" class="add-student-close" id="addStudentClose" aria-label="Close">&times;</button>
+            </div>
+            <p class="add-student-intro" id="addStudentIntro">
+                This student ID is not registered yet. Fill in their details to register and check them in.
+            </p>
+            <form id="addStudentForm" autocomplete="off">
+                <div class="add-student-grid">
+                    <div class="add-field">
+                        <label for="addStudentId">Student ID *</label>
+                        <input type="text" id="addStudentId" name="student_id" maxlength="20" required>
+                    </div>
+                    <div class="add-field">
+                        <label for="addStudentName">Full Name *</label>
+                        <input type="text" id="addStudentName" name="name" placeholder="Lastname, Firstname" required>
+                    </div>
+                    <div class="add-field">
+                        <label for="addStudentSex">Sex *</label>
+                        <select id="addStudentSex" name="sex" required>
+                            <option value="">—</option>
+                            <option value="M">Male</option>
+                            <option value="F">Female</option>
+                        </select>
+                    </div>
+                    <div class="add-field">
+                        <label for="addStudentYear">Year Level *</label>
+                        <select id="addStudentYear" name="year" required>
+                            <option value="">—</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                            <option value="6">6</option>
+                        </select>
+                    </div>
+                    <div class="add-field">
+                        <label for="addStudentCollege">College *</label>
+                        <select id="addStudentCollege" name="college" required>
+                            <option value="">Loading…</option>
+                        </select>
+                    </div>
+                    <div class="add-field">
+                        <label for="addStudentProgram">Program *</label>
+                        <select id="addStudentProgram" name="program" required>
+                            <option value="">Select college first</option>
+                        </select>
+                    </div>
+                    <div class="add-field add-field-major" id="addStudentMajorGroup" hidden>
+                        <label for="addStudentMajor">Major</label>
+                        <select id="addStudentMajor" name="major">
+                            <option value="">None</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="add-student-error" id="addStudentError" hidden></p>
+                <div class="add-student-actions">
+                    <button type="button" class="add-student-btn-secondary" id="addStudentCancel">Cancel</button>
+                    <button type="submit" class="add-student-btn-primary" id="addStudentSubmit">
+                        <i class="fas fa-user-plus"></i> Register &amp; Check In
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

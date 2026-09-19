@@ -4,18 +4,14 @@ cffi==2.0.0
 charset-normalizer==3.4.4
 cloudinary==1.44.1
 colorama==0.4.6
-crispy-bootstrap5==2025.6
 cryptography==46.0.3
 dj-database-url==3.1.2
 Django==5.2.10
 django-cloudinary-storage==0.3.0
-django-crispy-forms==2.5
 django-ratelimit==4.1.0
 django-extensions==4.1
 werkzeug==3.1.8
-djangorestframework==3.16.1
 et_xmlfile==2.0.0
-gunicorn==26.2.0
 idna==3.19
 openpyxl==3.1.5
 pdfminer.six==20251230
@@ -34,4 +30,5 @@ six==1.17.0
 sqlparse==0.5.5
 tzdata==2025.3
 urllib3==2.8.0
+waitress==3.0.2
 whitenoise==6.12.0
