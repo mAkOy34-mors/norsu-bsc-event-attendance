@@ -1021,3 +1021,159 @@ tbody tr:hover { background: var(--light); }
     .calendar-section { grid-template-columns: 1fr; max-width: 420px; }
 }
 
+
+/* ==========================================================================
+   SweetAlert theme (qrapp-wide)
+   notify.js sets buttonsStyling:false + these customClasses, so every
+   dialog and toast in the app shares one look built on the design tokens.
+   ========================================================================== */
+.swal2-container {
+    font-family: var(--font-body) !important;
+    z-index: 20000 !important;
+}
+
+.swal2-popup.qr-swal-popup {
+    border: 1px solid var(--border-soft);
+    border-radius: var(--border-radius) !important;
+    box-shadow: var(--shadow-lg) !important;
+    padding: 1.75em 1.5em 1.5em !important;
+}
+
+.swal2-popup.qr-swal-popup.qr-swal-toast {
+    padding: 0.7em 1em !important;
+    border-radius: var(--border-radius-sm) !important;
+}
+
+.swal2-popup .qr-swal-title {
+    font-family: var(--font-display) !important;
+    font-size: 1.2rem !important;
+    font-weight: 800;
+    color: var(--dark) !important;
+}
+
+.swal2-popup .qr-swal-toast .qr-swal-title,
+.swal2-toast .qr-swal-title {
+    font-size: 0.95rem !important;
+    font-weight: 700;
+}
+
+.swal2-popup .qr-swal-text {
+    color: var(--dark-light) !important;
+    font-size: 0.92rem !important;
+}
+
+.swal2-popup .swal2-actions { gap: 10px; }
+
+.swal-btn {
+    font-family: var(--font-body) !important;
+    font-weight: 700 !important;
+    font-size: 0.9rem !important;
+    padding: 9px 22px !important;
+    border-radius: 10px !important;
+    border: 1px solid transparent !important;
+    cursor: pointer;
+    transition: var(--transition) !important;
+    margin: 0 !important;
+}
+
+.swal-btn-primary {
+    background: var(--primary) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(9, 132, 227, 0.3) !important;
+}
+.swal-btn-primary:hover { background: var(--primary-dark) !important; }
+
+.swal-btn-danger {
+    background: var(--danger) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(214, 48, 49, 0.3) !important;
+}
+.swal-btn-danger:hover { background: #b71f20 !important; }
+
+.swal-btn-warn {
+    background: var(--warning) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(184, 134, 11, 0.3) !important;
+}
+.swal-btn-warn:hover { background: #946c09 !important; }
+
+.swal-btn-neutral {
+    background: var(--surface-2) !important;
+    color: var(--dark) !important;
+    border-color: var(--border) !important;
+}
+.swal-btn-neutral:hover { background: var(--border-soft) !important; }
+
+/* ==========================================================================
+   Inline alert banners (Django messages / page feedback) — one style for
+   every page; page stylesheets no longer redefine their own.
+   ========================================================================== */
+.alert {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: var(--border-radius-sm);
+    margin-bottom: 10px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    border-left-width: 4px;
+}
+
+.alert-success {
+    background: rgba(0, 184, 148, 0.08);
+    border-left-color: var(--success);
+    color: #0b6e4f;
+}
+
+.alert-error, .alert-danger {
+    background: rgba(214, 48, 49, 0.07);
+    border-left-color: var(--danger);
+    color: #a33033;
+}
+
+.alert-warning {
+    background: rgba(184, 134, 11, 0.08);
+    border-left-color: var(--warning);
+    color: #8a6508;
+}
+
+.alert-info {
+    background: rgba(9, 132, 227, 0.07);
+    border-left-color: var(--info);
+    color: #1d5d90;
+}
+
+.alert-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    line-height: 1;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.55;
+}
+
+.alert-close:hover { opacity: 1; }
+
+/* Live Logs modal trigger — styled to match the sidebar nav links */
+.sidebar-nav .live-logs-nav-btn {
+    padding: 10px 14px;
+    color: var(--gray);
+    border-radius: 12px;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.sidebar-nav .live-logs-nav-btn:hover {
+    background: var(--surface-2);
+    color: var(--dark);
+}

@@ -13,8 +13,8 @@ body {
 
 .rl-card {
     background: #fff;
-    border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(15, 47, 79, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(15, 47, 79, 0.12);
     max-width: 420px;
     width: 100%;
     padding: 40px 32px;

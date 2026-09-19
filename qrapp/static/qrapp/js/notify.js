@@ -1,5 +1,7 @@
 /**
- * SweetAlert2 notification bridge.
+ * SweetAlert2 notification bridge — the single notification system for the
+ * whole app. Every dialog/toast renders through this module so styling stays
+ * identical everywhere (see the "SweetAlert theme" section in style.css).
  *
  * Provides the `notify` helper (toast + modal feedback) and `confirmAction`
  * (Promise-based confirm). Loaded in <head> (deferred) on every base.html
@@ -33,17 +35,42 @@
         return;
     }
 
-    var baseToast = {
+    // ---- shared theme -------------------------------------------------
+    // buttonsStyling:false + customClass let style.css own the button look
+    // (tokens: --primary / --danger / --warning), so every dialog in the
+    // app matches instead of Swal's default per-icon coloring.
+    var BTN = {
+        primary: 'swal-btn swal-btn-primary',
+        danger: 'swal-btn swal-btn-danger',
+        warn: 'swal-btn swal-btn-warn',
+        neutral: 'swal-btn swal-btn-neutral',
+    };
+
+    var theme = {
+        buttonsStyling: false,
+        customClass: {
+            popup: 'qr-swal-popup',
+            title: 'qr-swal-title',
+            htmlContainer: 'qr-swal-text',
+            confirmButton: BTN.primary,
+        },
+    };
+
+    var baseToast = Object.assign({}, theme, {
         toast: true,
         position: 'top-end',
         showConfirmButton: false,
         timer: 3200,
         timerProgressBar: true,
+        customClass: {
+            popup: 'qr-swal-popup qr-swal-toast',
+            title: 'qr-swal-title',
+        },
         didOpen: function (toast) {
             toast.addEventListener('mouseenter', Swal.stopTimer);
             toast.addEventListener('mouseleave', Swal.fire, Swal.resumeTimer);
         },
-    };
+    });
 
     window.notify = {
         /** Small corner toast for non-blocking feedback. */
@@ -56,44 +83,60 @@
 
         /** Success modal (or toast via opts.toast). */
         success: function (title, text, opts) {
-            return Swal.fire(Object.assign({
+            return Swal.fire(Object.assign({}, theme, {
                 icon: 'success',
                 title: title,
                 text: text || '',
-                confirmButtonColor: '#0984e3',
+                confirmButtonText: 'OK',
                 timer: text ? 0 : 2600,
                 timerProgressBar: !text,
-            }, opts || {}));
+            }, opts || {}, {
+                customClass: Object.assign({}, theme.customClass, {
+                    confirmButton: BTN.primary,
+                }, (opts && opts.customClass) || {}),
+            }));
         },
 
         /** Error modal. */
         error: function (title, text, opts) {
-            return Swal.fire(Object.assign({
+            return Swal.fire(Object.assign({}, theme, {
                 icon: 'error',
                 title: title,
                 text: text || '',
-                confirmButtonColor: '#d63031',
-            }, opts || {}));
+                confirmButtonText: 'Try again',
+            }, opts || {}, {
+                customClass: Object.assign({}, theme.customClass, {
+                    confirmButton: BTN.danger,
+                }, (opts && opts.customClass) || {}),
+            }));
         },
 
         /** Warning modal. */
         warning: function (title, text, opts) {
-            return Swal.fire(Object.assign({
+            return Swal.fire(Object.assign({}, theme, {
                 icon: 'warning',
                 title: title,
                 text: text || '',
-                confirmButtonColor: '#b8860b',
-            }, opts || {}));
+                confirmButtonText: 'Understood',
+            }, opts || {}, {
+                customClass: Object.assign({}, theme.customClass, {
+                    confirmButton: BTN.warn,
+                }, (opts && opts.customClass) || {}),
+            }));
         },
 
         /** Info modal. */
         info: function (title, text, opts) {
-            return Swal.fire(Object.assign({
+            return Swal.fire(Object.assign({}, theme, {
                 icon: 'info',
                 title: title,
                 text: text || '',
-                confirmButtonColor: '#0984e3',
-            }, opts || {}));
+                confirmButtonText: 'OK',
+            }, opts || {}, {
+                customClass: Object.assign({}, theme.customClass, {
+                    confirmButton: BTN.primary,
+                }, (opts && opts.customClass) || {}),
+            }));
         },
 
         /**
@@ -117,20 +160,24 @@
     /**
      * Promise-based destructive-action confirm.
      * Returns Promise<boolean> so callers can `if (!(await confirmAction()))`.
+     * Danger confirm + neutral cancel unless opts.danger === false.
      */
     window.confirmAction = function (opts) {
         opts = opts || {};
-        return Swal.fire({
+        return Swal.fire(Object.assign({}, theme, {
             icon: 'warning',
             title: opts.title || 'Are you sure?',
             text: opts.text || 'This action cannot be undone.',
             showCancelButton: true,
             confirmButtonText: opts.confirmText || 'Yes, continue',
-            confirmButtonColor: opts.danger === false ? '#0984e3' : '#d63030',
-            cancelButtonColor: '#636e72',
+            cancelButtonText: 'Cancel',
             reverseButtons: true,
             focusCancel: true,
-        }).then(function (result) {
+            customClass: Object.assign({}, theme.customClass, {
+                confirmButton: opts.danger === false ? BTN.primary : BTN.danger,
+                cancelButton: BTN.neutral,
+            }),
+        })).then(function (result) {
             return result.isConfirmed;
         });
     };

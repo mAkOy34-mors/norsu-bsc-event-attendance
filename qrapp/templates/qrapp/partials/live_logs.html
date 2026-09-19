@@ -1,26 +1,37 @@
 {% load static %}
-{# Realtime "Live Logs" sidebar widget — polls for new time-in/time-out records. #}
+{# Realtime "Live Logs" modal — polls for new time-in/time-out records. #}
+{# Opened by any element with [data-open-live-logs]; closable via the X #}
+{# button, a click on the dark backdrop, or the Escape key.              #}
 <link rel="stylesheet" href="{% static 'qrapp/css/live_sidebar_logs.css' %}">
-<div class="sidebar-logs" id="sidebarLogs"
-     data-logs-url="{% url 'ajax_sidebar_logs' %}"
-     data-initial-limit="12">
-    <p class="nav-section-title sidebar-logs-title">
-        <i class="fas fa-stream"></i> Live Logs
-        <span class="live-dot" id="liveLogsDot" title="Live"></span>
-    </p>
 
-    <div class="sidebar-logs-scroll" id="liveLogsList" aria-live="polite">
-        <div class="sidebar-logs-empty" id="liveLogsEmpty">
-            <i class="fas fa-hourglass-half"></i>
-            <span>Waiting for scans…</span>
+<div class="live-logs-modal" id="liveLogsModal" aria-hidden="true">
+    <div class="live-logs-modal-card" role="dialog" aria-modal="true" aria-label="Live Logs">
+        <div class="live-logs-modal-header">
+            <h3><i class="fas fa-stream"></i> Live Logs
+                <span class="live-dot" id="liveLogsDot" title="Live"></span>
+            </h3>
+            <button type="button" class="live-logs-close" id="liveLogsClose" aria-label="Close live logs">&times;</button>
         </div>
-    </div>
 
-    <div class="sidebar-logs-footer">
-        <span class="sidebar-logs-updated" id="liveLogsUpdated">—</span>
-        <a href="{% url 'admin_dashboard' %}?section=dashboard" class="sidebar-logs-link">
-            View all <i class="fas fa-arrow-right"></i>
-        </a>
+        <div class="live-logs-modal-body">
+            <div class="sidebar-logs" id="sidebarLogs"
+                 data-logs-url="{% url 'ajax_sidebar_logs' %}"
+                 data-initial-limit="12">
+                <div class="sidebar-logs-scroll" id="liveLogsList" aria-live="polite">
+                    <div class="sidebar-logs-empty" id="liveLogsEmpty">
+                        <i class="fas fa-hourglass-half"></i>
+                        <span>Waiting for scans…</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="live-logs-modal-footer">
+            <span class="sidebar-logs-updated" id="liveLogsUpdated">—</span>
+            <a href="{% url 'admin_dashboard' %}?section=dashboard" class="sidebar-logs-link">
+                View all <i class="fas fa-arrow-right"></i>
+            </a>
+        </div>
     </div>
 </div>
 

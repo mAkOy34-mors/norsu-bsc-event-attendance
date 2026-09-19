@@ -23,6 +23,7 @@
 
         <ul class="nav-links">
             <li><a href="{% url 'dashboard_home' %}" class="active"><i class="fas fa-home"></i> Dashboard</a></li>
+            <li><button type="button" class="live-logs-nav-btn" data-open-live-logs><i class="fas fa-stream"></i> Live Logs</button></li>
             <li><a href="{% url 'scanner' %}"><i class="fas fa-camera"></i> Scanner</a></li>
             <li><a href="{% url 'admin_dashboard' %}?section=dashboard"><i class="fas fa-clipboard-list"></i> Attendance Records</a></li>
             <li><a href="{% url 'admin_dashboard' %}?section=students"><i class="fas fa-users"></i> Student Management</a></li>
@@ -131,11 +132,6 @@
             </div>
         </div>
 
-        <!-- Live Logs (realtime, no refresh) -->
-        <div class="recent-activity live-logs-card">
-            {% include 'qrapp/partials/live_logs.html' %}
-        </div>
-
         <!-- Recent Activity -->
         <div class="recent-activity">
             <h3><i class="fas fa-clock"></i> Recent Activity</h3>
@@ -154,6 +150,8 @@
     </div>
 
     {{ chart_data|json_script:"dashboard-chart-data" }}
+    <!-- Live Logs modal (opened from the sidebar button) -->
+    {% include 'qrapp/partials/live_logs.html' %}
     <script src="{% static 'qrapp/js/chime.js' %}"></script>
     <script src="{% static 'qrapp/js/dashboard_home.js' %}" defer></script>
 </body>

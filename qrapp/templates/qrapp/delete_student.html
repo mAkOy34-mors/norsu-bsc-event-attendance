@@ -1,32 +1,89 @@
+{% extends 'qrapp/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Delete Student - Confirm Password</title>
-    <link rel="stylesheet" href="{% static 'qrapp/css/delete_student.css' %}">
-</head>
-<body>
-    <div class="confirm-box">
-        <h2>Delete Student</h2>
-        <p>Are you sure you want to delete <strong>{{ student.name }}</strong>?</p>
+
+{% block title %}Delete Student | QR Attendance System{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+    <div class="header-content">
+        <h2><i class="fas fa-user-slash"></i> Delete Student</h2>
+        <p>Confirmation with your account password is required</p>
+    </div>
+    <div class="header-actions">
+        <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<div class="card delete-confirm-card">
+    <div class="card-body">
+        <div class="delete-warning">
+            <i class="fas fa-triangle-exclamation"></i>
+            <div>
+                <strong>You are about to delete <span class="delete-name">{{ student.name }}</span> ({{ student.student_id }}).</strong>
+                <p>This removes the student and all of their attendance records. This action cannot be undone.</p>
+            </div>
+        </div>
 
         <form method="POST" id="deleteForm">
             {% csrf_token %}
-            <input type="password" class="password-input" id="adminPassword"
-                   name="adminPassword" placeholder="Enter your account password" required>
-            <div class="error-message" id="passwordError"{% if messages %}{% for message in messages %}{% if message.tags == 'error' %} data-error-text="{{ message }}"{% endif %}{% endfor %}{% endif %}>
-                Incorrect password. Please try again.
+            <div class="form-group">
+                <label for="adminPassword">Your account password</label>
+                <input type="password" class="password-input" id="adminPassword"
+                       name="adminPassword" placeholder="Enter your account password" required autocomplete="current-password">
+            </div>
+            <div class="alert alert-error password-error" id="passwordError" style="display:none;"
+                 {% if messages %}{% for message in messages %}{% if message.tags == 'error' %} data-error-text="{{ message }}"{% endif %}{% endfor %}{% endif %}>
+                <span id="passwordErrorText">Incorrect password. Please try again.</span>
             </div>
 
-            <div>
-                <button type="submit" class="btn btn-delete">Confirm Delete</button>
-                <a href="{% url 'admin_dashboard' %}" class="btn btn-cancel">Cancel</a>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-danger">
+                    <i class="fas fa-trash"></i> Confirm Delete
+                </button>
+                <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary">Cancel</a>
             </div>
         </form>
     </div>
+</div>
+{% endblock %}
 
-    {% include 'qrapp/partials/notifications.html' %}
-    <script src="{% static 'qrapp/js/delete_student.js' %}" defer></script>
-</body>
-</html>
+{% block extra_css %}
+<style>
+    .delete-confirm-card { max-width: 560px; }
+
+    .delete-warning {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        background: rgba(214, 48, 49, 0.06);
+        border: 1px solid rgba(214, 48, 49, 0.18);
+        border-radius: var(--border-radius-sm);
+        padding: 14px 16px;
+        margin-bottom: 18px;
+        color: var(--danger);
+    }
+
+    .delete-warning i { font-size: 1.3rem; margin-top: 2px; }
+
+    .delete-warning p {
+        color: var(--gray);
+        font-size: 0.86rem;
+        margin-top: 2px;
+    }
+
+    .delete-warning .delete-name { color: var(--dark); }
+
+    .form-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'qrapp/js/delete_student.js' %}" defer></script>
+{% endblock %}

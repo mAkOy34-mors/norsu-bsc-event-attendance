@@ -1,9 +1,11 @@
 /* live_sidebar_logs.js
- * Realtime sidebar "Live Logs" widget.
- * Polls for new attendance records (time-in / time-out) every few seconds and
- * prepends them without any page refresh. Also requests a Screen Wake Lock so
- * the display stays active while the dashboard is monitored on a kiosk/screen.
- * Rings the bell (chime.js) whenever a brand-new check-in arrives.
+ * Realtime "Live Logs" modal (partials/live_logs.html).
+ * Opens from any [data-open-live-logs] sidebar button; polls for new
+ * attendance records (time-in / time-out) every few seconds while it is
+ * open and prepends them without any page refresh. Requests a Screen Wake
+ * Lock while open so the display stays active on a kiosk/screen, and rings
+ * the bell (chime.js) whenever a brand-new check-in arrives. Polling stops
+ * as soon as the modal closes.
  */
 
 (function () {
@@ -13,7 +15,8 @@
   const MAX_ITEMS = 20;      // keep the DOM from growing forever
 
   const widget = document.getElementById('sidebarLogs');
-  if (!widget) return;
+  const modal = document.getElementById('liveLogsModal');
+  if (!widget || !modal) return;
 
   const INITIAL_LIMIT = parseInt(widget.getAttribute('data-initial-limit'), 10) || 12;
 
@@ -58,7 +61,7 @@
     if (document.hidden) {
       stopPolling();
       releaseWakeLock();
-    } else {
+    } else if (isOpen()) {
       startPolling();
       requestWakeLock();  // re-acquire after tab becomes visible again
     }
@@ -199,12 +202,54 @@
     }
   }
 
-  /* ------------------------------- start ------------------------------- */
+  /* --------------------------- modal lifecycle --------------------------- */
 
-  startPolling();
-  requestWakeLock();
+  function isOpen() {
+    return modal.classList.contains('is-open');
+  }
 
-  // Tell other pollers (live_updates.js) that this widget already rings
-  // the bell for new scans, so the same scan never rings twice.
-  window.liveSidebarLogsActive = true;
+  function openLogs() {
+    if (isOpen()) return;
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    // Polling and the screen wake lock only run while the admin is
+    // actually watching the modal.
+    startPolling();
+    requestWakeLock();
+    // Tell other pollers (live_updates.js) that this widget already rings
+    // the bell for new scans, so the same scan never rings twice.
+    window.liveSidebarLogsActive = true;
+  }
+
+  function closeLogs() {
+    if (!isOpen()) return;
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+    stopPolling();
+    releaseWakeLock();
+    // Nobody is watching the modal now: live_updates.js rings the bell again.
+    window.liveSidebarLogsActive = false;
+  }
+
+  // Openers: sidebar buttons / nav items on any page ([data-open-live-logs]).
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-open-live-logs]')) {
+      e.preventDefault();
+      openLogs();
+    }
+  });
+
+  // Closable three ways: the X button, a click on the dark backdrop
+  // (outside the card), or the Escape key.
+  const closeBtn = document.getElementById('liveLogsClose');
+  if (closeBtn) closeBtn.addEventListener('click', closeLogs);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeLogs();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isOpen()) closeLogs();
+  });
+
+  // The seed poll never happened while closed, so ring state starts off.
+  window.liveSidebarLogsActive = false;
 })();

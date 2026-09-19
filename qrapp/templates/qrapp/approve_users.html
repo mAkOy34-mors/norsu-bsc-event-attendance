@@ -1,42 +1,64 @@
+{% extends 'qrapp/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Approve Users</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{% static 'qrapp/css/approve_users.css' %}">
-</head>
-<body>
-<div class="container">
-    <header>
-        <h1><i class="fas fa-user-check"></i> Pending User Approvals</h1>
-        <p>Review and approve new user registration requests</p>
-    </header>
 
-    <div class="content">
-        <div class="stats">
-            <div class="stat-card">
-                <h3>Pending Approvals</h3>
-                <div class="count">{{ pending_users.count }}</div>
-            </div>
-            <div class="stat-card">
-                <h3>Total Users</h3>
-                <div class="count">{{ total_users }}</div>
-            </div>
-        </div>
+{% block title %}Approve Users | QR Attendance System{% endblock %}
 
+{% block extra_css %}
+<style>
+    .avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: var(--primary-tint);
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.85rem;
+        margin-right: 12px;
+        flex-shrink: 0;
+    }
+
+    .user-info { display: flex; align-items: center; }
+    .user-details { line-height: 1.35; }
+    .user-details .username { font-weight: 700; color: var(--dark); }
+    .user-details .email { font-size: 12px; color: var(--gray); }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+    <div class="header-content">
+        <h2><i class="fas fa-user-check"></i> Approve Users</h2>
+        <p>Review and approve new registration requests</p>
+    </div>
+    <div class="header-actions">
+        <span class="badge badge-warning badge-lg">
+            Pending: {{ pending_users.count }}
+        </span>
+        <span class="badge badge-info badge-lg">
+            Total Users: {{ total_users }}
+        </span>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3><i class="fas fa-users"></i> Pending Registrations</h3>
+    </div>
+    <div class="card-body">
         <div class="table-container">
+            {% if pending_users %}
             <form method="post">
                 {% csrf_token %}
-                {% if pending_users %}
                 <table>
                     <thead>
                         <tr>
                             <th>User</th>
                             <th>Email</th>
-                            <th>Action</th>
+                            <th class="cell-actions">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -52,8 +74,8 @@
                                 </div>
                             </td>
                             <td>{{ user.email }}</td>
-                            <td>
-                                <button type="submit" name="user_id" value="{{ user.id }}" class="action-btn">
+                            <td class="cell-actions">
+                                <button type="submit" name="user_id" value="{{ user.id }}" class="btn btn-success btn-sm">
                                     <i class="fas fa-check"></i> Approve
                                 </button>
                             </td>
@@ -61,16 +83,14 @@
                         {% endfor %}
                     </tbody>
                 </table>
-                {% else %}
-                <div class="no-users">
-                    <i class="fas fa-users"></i>
-                    <p>No pending users to approve</p>
-                </div>
-                {% endif %}
             </form>
+            {% else %}
+            <div class="no-users" style="text-align:center; padding: 36px; color: var(--gray);">
+                <i class="fas fa-users" style="font-size: 42px; margin-bottom: 12px; color: var(--gray-light); display:block;"></i>
+                <p>No pending users to approve — all registrations have been reviewed.</p>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
-</body>
-</html>
-
+{% endblock %}

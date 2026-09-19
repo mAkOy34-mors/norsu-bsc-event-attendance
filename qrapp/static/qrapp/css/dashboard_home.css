@@ -1,17 +1,32 @@
+/* Design tokens — kept identical to style.css so the standalone
+   dashboard home renders with the same palette as the rest of the app. */
 :root {
-    /* Blue minimalist palette (matches style.css tokens). */
     --primary: #0984e3;
-    --secondary: #0a4d7a;
+    --primary-light: #3ea0ee;
+    --primary-dark: #0770c4;
     --primary-tint: #e7f2fc;
+    --secondary: #0a4d7a;
     --success: #00b894;
     --danger: #d63031;
     --warning: #b8860b;
     --info: #0984e3;
     --dark: #2d3436;
-    --light: #f8f9fa;
-    --base: #f4f6f9;
-    --gray: #636e72;
-    --border: #e0e0e0;
+    --dark-light: #4a5459;
+    --light: #fafbfc;
+    --base: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f4f6f8;
+    --border-soft: #edf0f4;
+    --gray: #64748b;
+    --gray-light: #b2bec3;
+    --border: #e5e8ee;
+    --font-display: 'Sora', 'Inter', sans-serif;
+    --font-body: 'Manrope', 'Inter', sans-serif;
+    --border-radius: 16px;
+    --border-radius-sm: 10px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    --shadow-md: 0 1px 3px rgba(16, 24, 40, 0.05), 0 8px 24px rgba(16, 24, 40, 0.05);
+    --transition: all 0.2s ease;
 }
 
 * {
@@ -962,4 +977,19 @@ tr.row-new {
     0%   { background: #e7f2fc; }
     60%  { background: #f0f8ff; }
     100% { background: transparent; }
+}
+/* Live Logs modal trigger — styled to match the sidebar nav links */
+.nav-links .live-logs-nav-btn {
+    color: rgba(255, 255, 255, 0.85);
+    padding: 14px 18px;
+    gap: 15px;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: inherit;
+    transition: all 0.3s;
+}
+
+.nav-links .live-logs-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
 }

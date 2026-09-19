@@ -261,7 +261,7 @@ h1 {
 .camera-controls select:focus,
 .camera-controls button:focus {
   outline: none;
-  border-color: #8ba6c9;
+  border-color: #0984e3;
   box-shadow: 0 0 0 3px rgba(139, 166, 201, 0.12);
 }
 
@@ -347,7 +347,7 @@ h1 {
 }
 
 #eventSelect.event-select-required {
-  border-color: #d97a7a;
+  border-color: #d63031;
   box-shadow: 0 0 0 3px rgba(217, 122, 122, 0.1);
 }
 
@@ -396,7 +396,7 @@ h1 {
 
 .device-icon {
   font-size: 2.2rem;
-  color: #8ba6c9;
+  color: #64748b;
 }
 
 .device-scanner-panel input {
@@ -413,7 +413,7 @@ h1 {
 
 .device-scanner-panel input:focus {
   outline: none;
-  border-color: #8ba6c9;
+  border-color: #0984e3;
   box-shadow: 0 0 0 3px rgba(139, 166, 201, 0.1);
 }
 
@@ -465,8 +465,8 @@ h1 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #8bc34a;
-  box-shadow: 0 0 0 3px rgba(139, 195, 74, 0.1);
+  background: #00b894;
+  box-shadow: 0 0 0 3px rgba(0, 184, 148, 0.12);
 }
 
 /* "Scanning…" state: the dot pulses so it's obvious the scanner is live */
@@ -475,8 +475,8 @@ h1 {
 }
 
 @keyframes scanPulse {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(139, 195, 74, 0.1); }
-  50% { box-shadow: 0 0 0 7px rgba(139, 195, 74, 0.3); }
+  0%, 100% { box-shadow: 0 0 0 3px rgba(0, 184, 148, 0.12); }
+  50% { box-shadow: 0 0 0 7px rgba(0, 184, 148, 0.3); }
 }
 
 /* result box */
@@ -539,7 +539,7 @@ h1 {
 
 .camera-error-icon {
   font-size: 1.6rem;
-  color: #d97a7a;
+  color: #d63031;
   margin-bottom: 0.5rem;
 }
 
@@ -650,7 +650,7 @@ h1 {
 .input-group input:focus,
 .input-group select:focus {
   outline: none;
-  border-color: #8ba6c9;
+  border-color: #0984e3;
   box-shadow: 0 0 0 3px rgba(139, 166, 201, 0.1);
 }
 
@@ -688,7 +688,7 @@ h1 {
 }
 
 .instructions li::marker {
-  color: #8ba6c9;
+  color: #64748b;
   font-weight: 600;
 }
 
@@ -726,28 +726,28 @@ h1 {
 }
 
 .notification.in {
-  border-left-color: #6fbf8b;
-  background: #fafffc;
+  border-left-color: #00b894;
+  background: #f6fcf9;
 }
 
 .notification.out {
-  border-left-color: #6d9ed6;
-  background: #fafdff;
+  border-left-color: #0984e3;
+  background: #f5fafe;
 }
 
 .notification.error {
-  border-left-color: #d97a7a;
-  background: #fffafa;
+  border-left-color: #d63031;
+  background: #fdf4f4;
 }
 
 .notification.warning {
-  border-left-color: #e6c27a;
-  background: #fffdf8;
+  border-left-color: #b8860b;
+  background: #fdf9ef;
 }
 
 .notification.info {
-  border-left-color: #8ba6c9;
-  background: #fafdff;
+  border-left-color: #64748b;
+  background: #fafbfc;
 }
 
 .notification-icon {

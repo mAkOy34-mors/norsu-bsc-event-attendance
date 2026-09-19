@@ -1,54 +1,108 @@
 /* live_sidebar_logs.css
- * Styles for the realtime "Live Logs" sidebar widget (partials/live_logs.html).
- * Kept separate from style.css so pages with their own sidebar styles
- * (e.g. dashboard_home.html) can include the widget without pulling in
- * the whole admin stylesheet.
+ * Styles for the realtime "Live Logs" modal (partials/live_logs.html).
+ * Self-contained on purpose: pages with their own stylesheets
+ * (dashboard_home.html) include the same modal without pulling in
+ * style.css, and both token sets define the same palette variables.
  */
 
-.sidebar-logs {
-    margin: 4px 16px 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--border-soft, #edf0f4);
-    border-radius: 12px;
-    background: var(--surface-2, #f4f6f8);
+/* ---- modal shell ---- */
+.live-logs-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    background: rgba(15, 35, 60, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
 }
 
-.sidebar-logs-title {
+.live-logs-modal.is-open { display: flex; }
+
+.live-logs-modal-card {
+    background: var(--surface, #fff);
+    border: 1px solid var(--border-soft, #edf0f4);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(15, 47, 79, 0.28);
+    width: min(560px, 100%);
+    max-height: min(80vh, 720px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: liveLogsIn 0.22s ease;
+}
+
+@keyframes liveLogsIn {
+    from { opacity: 0; transform: translateY(14px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.live-logs-modal-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin: 0 0 8px !important;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-soft, #edf0f4);
 }
 
-.sidebar-logs-title i { color: var(--primary, #0984e3); }
+.live-logs-modal-header h3 {
+    margin: 0;
+    font-family: var(--font-display, 'Sora', sans-serif);
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: var(--dark, #2d3436);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
 
-/* Pulsing "live" indicator dot */
-.live-dot {
-    width: 8px;
-    height: 8px;
-    margin-left: auto;
-    border-radius: 50%;
-    background: var(--gray-light, #b2bec3);
-    flex: 0 0 auto;
+.live-logs-modal-header h3 i { color: var(--primary, #0984e3); }
+
+.live-logs-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--gray, #64748b);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
 }
-.live-dot.is-polling {
-    background: var(--warning, #b8860b);
-    animation: liveDotPulse 2s ease-in-out infinite;
+
+.live-logs-close:hover {
+    background: var(--primary-tint, #e7f2fc);
+    color: var(--dark, #2d3436);
 }
-.live-dot.is-live {
-    background: var(--success, #00b894);
-    animation: liveDotPulse 1.5s ease-in-out infinite;
+
+.live-logs-modal-body {
+    padding: 14px 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;      /* lets the log list scroll inside the flex card */
+    overflow: hidden;
 }
-@keyframes liveDotPulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.45; transform: scale(0.8); }
+
+/* ---- log list (was the sidebar widget body) ---- */
+.sidebar-logs {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
 }
 
 .sidebar-logs-scroll {
     list-style: none;
     margin: 0;
-    padding: 0;
-    max-height: 260px;
+    padding: 2px;
+    flex: 1;
+    min-height: 220px;
+    max-height: min(58vh, 560px);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -65,7 +119,7 @@
     gap: 8px;
     color: var(--gray, #64748b);
     font-size: 12px;
-    padding: 14px 6px;
+    padding: 22px 6px;
 }
 .sidebar-logs-empty i { opacity: 0.6; }
 
@@ -97,8 +151,8 @@
     border-radius: 6px;
     font-size: 10px;
 }
-.log-status.log-in { background: rgba(16, 185, 129, 0.12); color: var(--success, #00b894); }
-.log-status.log-out { background: rgba(245, 158, 11, 0.14); color: var(--warning, #b8860b); }
+.log-status.log-in { background: rgba(0, 184, 148, 0.12); color: var(--success, #00b894); }
+.log-status.log-out { background: rgba(184, 134, 11, 0.12); color: var(--warning, #b8860b); }
 
 .log-name {
     font-size: 12.5px;
@@ -144,24 +198,24 @@
     min-width: 0;
 }
 
-.sidebar-logs-footer {
+/* ---- footer: updated stamp + view-all link ---- */
+.live-logs-modal-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px dashed var(--border-soft, #edf0f4);
+    padding: 12px 20px;
+    border-top: 1px solid var(--border-soft, #edf0f4);
 }
 
 .sidebar-logs-updated {
-    font-size: 10px;
+    font-size: 10.5px;
     color: var(--gray, #64748b);
     font-weight: 600;
 }
 
 .sidebar-logs-link {
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 700;
     color: var(--primary, #0984e3);
     text-decoration: none;
@@ -173,8 +227,44 @@
 .sidebar-logs-link:hover { text-decoration: underline; }
 .sidebar-logs-link i { font-size: 9px; }
 
-/* Collapse the widget gracefully on small screens (only inside a sidebar;
-   standalone placements, e.g. dashboard_home's main column, stay visible) */
-@media (max-width: 768px) {
-    .sidebar .sidebar-logs { display: none; }
+/* Pulsing "live" indicator dot (header) */
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--gray-light, #b2bec3);
+    flex: 0 0 auto;
 }
+.live-dot.is-polling {
+    background: var(--warning, #b8860b);
+    animation: liveDotPulse 2s ease-in-out infinite;
+}
+.live-dot.is-live {
+    background: var(--success, #00b894);
+    animation: liveDotPulse 1.5s ease-in-out infinite;
+}
+@keyframes liveDotPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+/* Sidebar trigger button (styled like a nav item on every page) */
+.live-logs-nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 14px;
+    margin: 0;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.live-logs-nav-btn i:first-child { width: 20px; text-align: center; }
+.live-logs-nav-btn:hover { background: var(--primary-tint, #e7f2fc); color: var(--primary, #0984e3); }

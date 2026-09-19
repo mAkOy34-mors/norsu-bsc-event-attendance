@@ -1,50 +1,93 @@
+{% extends 'qrapp/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Edit Student</title>
-    <link rel="stylesheet" href="{% static 'qrapp/css/edit_student.css' %}">
-</head>
-<body>
-    <div class="form-container">
-        <h2>Edit Student</h2>
-        <form method="POST">
+
+{% block title %}Edit Student | QR Attendance System{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header">
+    <div class="header-content">
+        <h2><i class="fas fa-user-pen"></i> Edit Student</h2>
+        <p>{{ student.student_id }} — {{ student.name }}</p>
+    </div>
+    <div class="header-actions">
+        <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3><i class="fas fa-user-pen"></i> Student Details</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" class="edit-student-form">
             {% csrf_token %}
-            <label>Name:</label>
-            <input type="text" name="name" value="{{ student.name }}" required>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="idName">Name</label>
+                    <input type="text" id="idName" name="name" value="{{ student.name }}" required>
+                </div>
 
-            <label>Sex:</label>
-            <select name="sex" required>
-                <option value="Male" {% if student.sex == "Male" %}selected{% endif %}>Male</option>
-                <option value="Female" {% if student.sex == "Female" %}selected{% endif %}>Female</option>
-            </select>
+                <div class="form-group">
+                    <label for="idSex">Sex</label>
+                    <select id="idSex" name="sex" required>
+                        <option value="Male" {% if student.sex == "Male" %}selected{% endif %}>Male</option>
+                        <option value="Female" {% if student.sex == "Female" %}selected{% endif %}>Female</option>
+                    </select>
+                </div>
 
-            <label>College:</label>
-            <select name="college" required>
-                {% for code, name in college_choices %}
-                    <option value="{{ code }}" {% if student.college_code == code %}selected{% endif %}>
-                        {{ name }}
-                    </option>
-                {% endfor %}
-            </select>
+                <div class="form-group">
+                    <label for="idCollege">College</label>
+                    <select id="idCollege" name="college" required>
+                        {% for code, name in college_choices %}
+                            <option value="{{ code }}" {% if student.college_code == code %}selected{% endif %}>
+                                {{ name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-            <label>Program:</label>
-            <input type="text" name="program" value="{{ student.program_code }}" required>
+                <div class="form-group">
+                    <label for="idProgram">Program</label>
+                    <input type="text" id="idProgram" name="program" value="{{ student.program_code }}" required>
+                </div>
 
-            <label>Year:</label>
-            <input type="number" name="year" value="{{ student.year }}" required>
+                <div class="form-group">
+                    <label for="idYear">Year</label>
+                    <input type="number" id="idYear" name="year" value="{{ student.year }}" required min="1" max="6">
+                </div>
 
-            <label>Major:</label>
-            <input type="text" name="major" value="{{ student.major_name }}" placeholder="Leave blank if none">
+                <div class="form-group">
+                    <label for="idMajor">Major</label>
+                    <input type="text" id="idMajor" name="major" value="{{ student.major_name }}" placeholder="Leave blank if none">
+                </div>
+            </div>
 
-            <button type="submit" class="btn btn-save">Save Changes</button>
-            <a href="{% url 'admin_dashboard' %}" class="btn btn-cancel">Cancel</a>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+                <a href="{% url 'admin_dashboard' %}" class="btn btn-secondary">Cancel</a>
+            </div>
         </form>
     </div>
+</div>
+{% endblock %}
 
-    {% include 'qrapp/partials/notifications.html' %}
-</body>
-</html>
+{% block extra_css %}
+<style>
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 4px 18px;
+    }
 
-
+    .form-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 18px;
+    }
+</style>
+{% endblock %}

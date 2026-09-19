@@ -59,11 +59,15 @@
                 </a>
             </div>
 
-            {% include 'qrapp/partials/live_logs.html' %}
-
             <nav class="sidebar-nav">
                 <p class="nav-section-title">Overview</p>
                 <ul>
+                    <li>
+                        <button type="button" class="live-logs-nav-btn" data-open-live-logs>
+                            <i class="fas fa-stream"></i>
+                            <span>Live Logs</span>
+                        </button>
+                    </li>
                     {% block sidebar_links %}
                     {% with url_name=request.resolver_match.url_name section=request.GET.section %}
                     <li>
@@ -162,6 +166,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Live Logs modal (opened from the sidebar button) -->
+    {% include 'qrapp/partials/live_logs.html' %}
 
     <!-- SweetAlert2 + notifications bridge (must precede the app scripts) -->
     {% include 'qrapp/partials/notifications.html' %}
