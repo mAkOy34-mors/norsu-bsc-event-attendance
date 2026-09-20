@@ -227,6 +227,13 @@
   // ------------------------------------------------------------------
   // Camera scanning
   // ------------------------------------------------------------------
+  // Touch devices are far more likely to be phones/tablets where picking
+  // the rear camera by default matters; desktops keep the old behaviour.
+  function isMobileCameraPreferred() {
+    return ('ontouchstart' in window) ||
+      (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches);
+  }
+
   async function startCameraScan() {
     if (state.isScanning) return;
 
@@ -242,16 +249,25 @@
         populateCameraSelect(devices);
       }
 
-      // Prefer rear camera on mobile
-      let cameraId = state.currentCameraId;
-      if (!cameraId && state.cameras.length) {
+      // Prefer the rear ("environment") camera on mobile: match the device
+      // label first, then fall back to a facingMode constraint, which works
+      // even when Android labels are generic (e.g. "camera 1, facing front").
+      // Desktop keeps the previous behaviour (last listed camera).
+      let cameraConfig = state.currentCameraId || null;
+      if (!cameraConfig) {
         const rear = state.cameras.find((c) =>
           /back|rear|environment/i.test(c.label || '')
         );
-        cameraId = rear ? rear.id : state.cameras[state.cameras.length - 1].id;
+        if (rear) {
+          cameraConfig = rear.id;
+        } else if (state.cameras.length && isMobileCameraPreferred()) {
+          cameraConfig = { facingMode: 'environment' };
+        } else if (state.cameras.length) {
+          cameraConfig = state.cameras[state.cameras.length - 1].id;
+        }
       }
 
-      if (!cameraId) {
+      if (!cameraConfig) {
         throw new Error('No camera available');
       }
 
@@ -259,26 +275,88 @@
         verbose: false,
       });
 
-      await state.html5QrCode.start(
-        cameraId,
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0,
+      // Scan box sizing: hand the library a FUNCTION instead of a fixed size.
+      // html5-qrcode calls it with the video element's real rendered size, so
+      // the square can never overflow the preview (a hard-coded box did, which
+      // is what used to stretch the video and mis-align the shaded region).
+      // 90% of the shorter side keeps a slim dark margin while giving the
+      // operator the biggest possible aiming frame - the library only decodes
+      // inside this box, so bigger also means far fewer missed scans.
+      const startOpts = {
+        fps: 10,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const shorter = Math.min(viewfinderWidth, viewfinderHeight);
+          // Never below the library's 50px minimum, never above the preview.
+          const side = Math.max(50, Math.min(Math.floor(shorter * 0.9), shorter));
+          return { width: side, height: side };
         },
-        onScanSuccess,
-        onScanFailure
-      );
+      };
+
+      try {
+        await state.html5QrCode.start(
+          cameraConfig,
+          startOpts,
+          onScanSuccess,
+          onScanFailure
+        );
+      } catch (startErr) {
+        // A facingMode request can fail (some devices report "environment"
+        // but expose a single camera). Retry once with an explicit id.
+        if (typeof cameraConfig === 'object' && state.cameras.length) {
+          cameraConfig = state.cameras[state.cameras.length - 1].id;
+          // Drop any half-created preview element from the failed attempt
+          // and release whatever stream it may already hold.
+          const readerEl = document.getElementById('reader');
+          if (readerEl) {
+            readerEl.querySelectorAll('video').forEach((v) => {
+              if (v.srcObject) {
+                try {
+                  v.srcObject.getTracks().forEach((t) => t.stop());
+                } catch (e) { /* ignore */ }
+                v.srcObject = null;
+              }
+              v.remove();
+            });
+          }
+          try { state.html5QrCode.clear(); } catch (e) { /* ignore */ }
+          state.html5QrCode = new Html5Qrcode('reader', { verbose: false });
+          await state.html5QrCode.start(
+            cameraConfig,
+            startOpts,
+            onScanSuccess,
+            onScanFailure
+          );
+        } else {
+          throw startErr;
+        }
+      }
 
       // Track the active video track for cleanup
       const video = document.querySelector('#reader video');
       if (video && video.srcObject) {
         const tracks = video.srcObject.getVideoTracks();
-        if (tracks.length) state.videoTrack = tracks[0];
+        if (tracks.length) {
+          state.videoTrack = tracks[0];
+          // When started via facingMode, remember the concrete device so the
+          // dropdown and "Switch" cycling stay in sync with reality.
+          const settings = state.videoTrack.getSettings
+            ? state.videoTrack.getSettings()
+            : {};
+          if (settings.deviceId) {
+            state.currentCameraId = settings.deviceId;
+            if (els.cameraSelect) {
+              const exists = Array.from(els.cameraSelect.options)
+                .some((o) => o.value === state.currentCameraId);
+              if (exists) els.cameraSelect.value = state.currentCameraId;
+            }
+          }
+        }
       }
 
       state.isScanning = true;
-      state.currentCameraId = cameraId;
+      if (typeof cameraConfig === 'string') {
+        state.currentCameraId = cameraConfig;
+      }
       hideCameraError();
       setStatusText('Scanning…', true);
     } catch (err) {

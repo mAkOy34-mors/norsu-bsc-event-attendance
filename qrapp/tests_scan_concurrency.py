@@ -38,7 +38,8 @@ def make_student(student_id="2026-0001", **overrides):
 
 
 class ScanFlowTests(TestCase):
-    """The existing IN -> OUT -> IN behaviour must be preserved exactly."""
+    """IN -> OUT works per event; a completed student cannot check in to the
+    same event again — only a NEW event starts a fresh check-in."""
 
     def setUp(self):
         self.factory = RequestFactory()
@@ -79,7 +80,7 @@ class ScanFlowTests(TestCase):
         self.assertEqual(Attendance.objects.count(), 1)
         self.assertEqual(Attendance.objects.filter(status="IN").count(), 1)
 
-    def test_in_out_in_sequence_is_preserved(self):
+    def test_completed_student_cannot_recheck_in_to_same_event(self):
         self.scan()
         # Backdate the IN beyond the 1-hour gate so OUT is allowed.
         Attendance.objects.update(timestamp=timezone.now() - timedelta(hours=2))
@@ -88,14 +89,36 @@ class ScanFlowTests(TestCase):
         self.assertTrue(out_body["success"])
         self.assertEqual(out_body["status"], "OUT")
 
-        in_body = self.payload(self.scan())
-        self.assertTrue(in_body["success"])
-        self.assertEqual(in_body["status"], "IN")
+        # The student is done with this event: a rescan must NOT check them
+        # back in, no matter how much time has passed.
+        again_body = self.payload(self.scan())
+        self.assertFalse(again_body["success"])
+        self.assertIn("cannot check in again for this event", again_body["message"])
 
         statuses = list(
             Attendance.objects.order_by("timestamp").values_list("status", flat=True)
         )
-        self.assertEqual(statuses, ["IN", "OUT", "IN"])
+        self.assertEqual(statuses, ["IN", "OUT"])
+        self.assertEqual(Attendance.objects.count(), 2)
+
+    def test_completed_student_checks_in_fresh_on_a_new_event(self):
+        self.scan()
+        Attendance.objects.update(timestamp=timezone.now() - timedelta(hours=2))
+        out_body = self.payload(self.scan())
+        self.assertEqual(out_body["status"], "OUT")
+
+        new_event = make_event(title="Next Event", event_date=date.today())
+        request = self.factory.post(
+            "/qrapp/save_scan/",
+            {"event_id": str(new_event.id), "student_id": self.student.student_id},
+        )
+        request.user = self.user
+        body = json.loads(save_scan(request).content)
+        self.assertTrue(body["success"])
+        self.assertEqual(body["status"], "IN")
+        self.assertEqual(
+            Attendance.objects.filter(event=new_event, status="IN").count(), 1
+        )
 
     def test_event_on_another_day_is_still_rejected(self):
         other = make_event(title="Tomorrow", event_date=date.today() + timedelta(days=1))
@@ -143,7 +166,10 @@ class ScanFlowTests(TestCase):
         with CaptureQueriesContext(connection) as ctx:
             body = self.payload(self.scan())
 
-        self.assertTrue(body["success"])
+        # The newest record is OUT: the student completed this event, so the
+        # rescan is rejected instead of creating another IN.
+        self.assertFalse(body["success"])
+        self.assertIn("cannot check in again", body["message"])
         sql = " ".join(q["sql"] for q in ctx.captured_queries)
         # The old code ran .exists() over a full history scan and then .last().
         self.assertNotIn("ORDER BY `qrapp_attendance`.`timestamp` ASC", sql)

@@ -148,6 +148,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Reports section: majors appear only when the picked program has them,
+    // and reset when the college (thus program list) changes.
+    const reportsProgramSelect = document.getElementById('reportsProgram');
+    if (reportsProgramSelect) {
+        reportsProgramSelect.addEventListener('change', () => {
+            updateProgramMajorDropdown(reportsProgramSelect.value, 'reportsMajorGroup', 'reportsMajor');
+        });
+    }
+    const reportsCollegeSelect = document.getElementById('reportsCollege');
+    if (reportsCollegeSelect) {
+        reportsCollegeSelect.addEventListener('change', () => {
+            const group = document.getElementById('reportsMajorGroup');
+            const major = document.getElementById('reportsMajor');
+            if (major) major.value = '';
+            if (group) group.classList.add('is-hidden');
+        });
+    }
+
     // Export Report modal: majors appear only when the picked program has them
     const exportReportProgramSelect = document.getElementById('exportProgram');
     if (exportReportProgramSelect) {

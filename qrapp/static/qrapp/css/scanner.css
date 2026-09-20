@@ -22,6 +22,9 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
+  /* phones: never let a wide child push the page sideways */
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 /* subtle grid container */
@@ -176,12 +179,34 @@ h1 {
   align-items: center;
   gap: 1rem;
   grid-column: 1;
+  /* grid items default to min-width:auto -> wide children blow out the column */
+  min-width: 0;
+}
+
+/* ---------- mode switcher : controls stacked above the preview ----------
+   This wrapper had no rule at all. As a CENTRED flex item its `width: auto`
+   resolved to fit-content, which floors at the wrapper's MIN-CONTENT width -
+   and a <select> reports its longest <option> as its min-content width. So
+   the whole stack (toggle + camera row + event card + event row) rendered
+   395px wide inside a 345px column, bleeding past the card on both sides and
+   getting clipped by the screen. A definite width + min-width: 0 fixes it. */
+.scan-mode-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 520px;
+  min-width: 0;
 }
 
 /* mode toggle: subtle segmented control */
 .mode-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  width: 100%;
+  max-width: 520px;
+  /* flex item of .scan-mode-switcher: labels must never force it wider */
+  min-width: 0;
   background: #f7f9fc;
   border-radius: 12px;
   padding: 0.25rem;
@@ -191,6 +216,7 @@ h1 {
 .mode-btn {
   border: none;
   background: transparent;
+  min-width: 0;
   color: #5b6b80;
   padding: 0.6rem 1rem;
   border-radius: 9px;
@@ -218,6 +244,9 @@ h1 {
   align-items: center;
   width: 100%;
   max-width: 520px;
+  /* flex item inside the column: allow shrinking below content size so a
+     long <option> can never push the row wider than the screen */
+  min-width: 0;
 }
 
 .camera-controls select,
@@ -235,6 +264,14 @@ h1 {
 
 .camera-controls select {
   flex: 1;
+  /* CRITICAL: a <select>'s min-content width equals its longest <option>
+     text. Without min-width: 0 the row blows out past the viewport on
+     phones (this must live in the BASE rule, not only the mobile media
+     query, so it holds for every viewport width). */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236a7a8e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -277,6 +314,7 @@ h1 {
   width: 100%;
   max-width: 520px;
   transition: border-color 0.15s;
+  min-width: 0;
 }
 
 .event-attendance-photo,
@@ -370,10 +408,20 @@ h1 {
 }
 
 #reader video {
-  width: 100%;
-  height: 100%;
+  /* html5-qrcode absolutely positions the video; pin it to the whole box so
+     the preview can never bleed past the rounded card on mobile */
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
   object-fit: cover;
   display: block;
+  border-radius: 15px;
+}
+
+#reader canvas {
+  /* keep the (hidden) decode canvas contained as well */
+  max-width: 100%;
 }
 
 /* device scanner panel */
@@ -591,6 +639,8 @@ h1 {
   border-radius: 16px;
   padding: 1.5rem;
   width: 100%;
+  /* grid items: never let content push the column wider than the page */
+  min-width: 0;
 }
 
 .manual-input {
@@ -849,15 +899,33 @@ h1 {
 
 @media (max-width: 600px) {
   body {
-    padding: 0.75rem;
+    padding: 0.5rem;
+  }
+
+  .container {
+    border-radius: 16px;
   }
 
   .main-content {
-    padding: 1.2rem;
+    padding: 1rem 0.85rem 1.25rem;
   }
 
   h1 {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
+  }
+
+  .header-content {
+    gap: 0.6rem;
+  }
+
+  .header-icon-badge {
+    width: 38px;
+    height: 38px;
+    font-size: 1.05rem;
+  }
+
+  .header-subtitle {
+    font-size: 0.72rem;
   }
 
   .header-actions {
@@ -865,14 +933,55 @@ h1 {
     justify-content: space-between;
   }
 
+  .logout-btn,
+  .sync-badge {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.72rem;
+  }
+
   .sync-badge {
     padding: 0.5rem 0.8rem;
     font-size: 0.7rem;
   }
 
+  /* segmented tabs: labels shrink but must never overflow */
+  .mode-toggle {
+    width: 100%;
+    max-width: 520px;
+  }
+
   .mode-btn {
+    font-size: 0.72rem;
+    padding: 0.5rem 0.55rem;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .mode-btn i {
     font-size: 0.75rem;
-    padding: 0.5rem 0.7rem;
+  }
+
+  /* selects + buttons inside the left column */
+  .camera-controls {
+    max-width: 520px;
+    gap: 0.45rem;
+  }
+
+  .camera-controls select {
+    min-width: 0;
+    font-size: 0.78rem;
+    padding: 0.55rem 2rem 0.55rem 0.7rem;
+  }
+
+  .camera-controls button {
+    font-size: 0.75rem;
+    padding: 0.55rem 0.7rem;
+  }
+
+  .event-attendance-card {
+    max-width: 520px;
+    padding: 0.75rem;
+    gap: 0.7rem;
   }
 
   .event-attendance-photo,
@@ -880,6 +989,30 @@ h1 {
     width: 48px;
     height: 48px;
     font-size: 1rem;
+  }
+
+  .event-attendance-title {
+    font-size: 0.85rem;
+  }
+
+  .event-attendance-label,
+  .event-attendance-sub {
+    font-size: 0.68rem;
+  }
+
+  #reader {
+    /* Phones: a 4:3 preview is only ~260px tall in portrait, which caps the
+       square scan frame at ~90% of that. A square preview lets the frame grow
+       with the card width (object-fit: cover keeps the video filling it), so
+       the aiming square is around a third larger for the same screen. The
+       520px cap from the base rule is kept so the preview lines up with the
+       mode toggle, the control rows and the result box. */
+    aspect-ratio: 1 / 1;
+  }
+
+  .manual-input,
+  .instructions {
+    padding: 1.1rem;
   }
 
   .notification-center {

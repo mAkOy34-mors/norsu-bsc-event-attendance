@@ -876,7 +876,7 @@ def _lock_scan_target(
     """Persist one scan inside a transaction holding a per-student row lock.
 
     Returns ``(outcome, student)`` where outcome is one of: ``student_missing``,
-    ``manual``, ``in``, ``out``, ``too_soon``, ``in_again``.
+    ``manual``, ``in``, ``out``, ``too_soon``, ``already_completed``.
     """
     with transaction.atomic():
         # Lock the STUDENT row (never the whole Attendance table). A student
@@ -923,8 +923,10 @@ def _lock_scan_target(
                 return "too_soon", student
             insert("OUT")
             return "out", student
-        insert("IN")
-        return "in_again", student
+        # Last record for THIS event is OUT: attendance is complete. No
+        # further check-ins on this event -- a different event starts fresh
+        # (the query above is scoped per event already).
+        return "already_completed", student
 
 
 # Scan endpoint: generous enough for a queue of students (1 scan / 2s per
@@ -1074,14 +1076,16 @@ def save_scan(request):
             "time": stamp
         })
 
-    if outcome == "in_again":
+    if outcome == "already_completed":
         return JsonResponse({
-            "success": True,
-            "message": f"{student.name} marked IN again{event_note} at {stamp}",
-            "status": "IN",
-            "color": "success",
+            "success": False,
+            "message": (
+                f"{student.name} already completed attendance for "
+                f"{event.title} (checked out) and cannot check in again "
+                "for this event."
+            ),
+            "color": "warning",
             "student_name": student.name,
-            "time": stamp
         })
 
     return JsonResponse({
@@ -1205,6 +1209,7 @@ def ajax_student_list(request):
         year_filter = request.GET.get("year")
         program_filter = request.GET.get("program")
         college_filter = request.GET.get("college")
+        major_filter = request.GET.get("major")
         search_query = request.GET.get("search")
         status_filter = request.GET.get("status")
         sort_filter = request.GET.get("sort", "name")
@@ -1218,6 +1223,8 @@ def ajax_student_list(request):
             students = students.filter(program__code=program_filter)
         if college_filter:
             students = students.filter(college__code=college_filter)
+        if major_filter:
+            students = students.filter(major__name__iexact=major_filter)
         if search_query:
             students = students.filter(
                 Q(name__icontains=search_query) |
@@ -1496,6 +1503,7 @@ def ajax_reports_data(request):
         year_filter = request.GET.get("year")
         program_filter = request.GET.get("program")
         college_filter = request.GET.get("college")
+        major_filter = request.GET.get("major")
         search_query = request.GET.get("search")
         status_filter = request.GET.get("status")
         sort_filter = request.GET.get("sort", "name")
@@ -1513,6 +1521,8 @@ def ajax_reports_data(request):
             students = students.filter(program__code=program_filter)
         if college_filter:
             students = students.filter(college__code=college_filter)
+        if major_filter:
+            students = students.filter(major__name__iexact=major_filter)
         if search_query:
             students = students.filter(
                 Q(name__icontains=search_query) |
