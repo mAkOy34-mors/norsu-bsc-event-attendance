@@ -29,6 +29,7 @@ from .forms import StudentForm, StudentUploadForm
 from .student_import import import_students_from_file
 from .student_export import export_students_response
 from .attendance_export import export_attendance_response
+from . import attendance_status
 from .caching import (
     build_calendar_cache_key,
     build_chart_cache_key,
@@ -152,6 +153,34 @@ def build_calendar_data(today=None):
         "attendance_by_date": attendance_by_date,
         "manage_events_url": reverse("manage_events"),
     }, Event.objects.filter(is_current=True, is_active=True).first()
+
+
+def latest_attendance_date(fallback=None):
+    """The newest day that actually has attendance scans.
+
+    The dashboard, reports tab and Live Logs feed all used to fall back to
+    ``date.today()`` whenever staff left the Date box empty. Scans always land
+    on the event's own date, so on every day *after* the event those views
+    blanked out -- "Expected 4396 / Attended 0 / Absent 4396 / Scans 0" and
+    "No attendance records found" -- even though the rows were sitting in the
+    database. Falling back to the newest day WITH scans keeps those views
+    showing real data, while a typed date still wins over this default.
+
+    Returns ``fallback`` (or today) when the table is empty.
+    """
+    latest = (
+        Attendance.objects.order_by("-timestamp")
+        .values_list("timestamp", flat=True)
+        .first()
+    )
+    if latest is None:
+        return fallback if fallback is not None else date.today()
+    try:
+        # USE_TZ is False in this project, so timestamps are already local and
+        # localtime() raises on naive datetimes -- hence the fallback below.
+        return timezone.localtime(latest).date()
+    except (ValueError, AttributeError):
+        return latest.date()
 
 
 def build_event_analytics(students_qs, scanned_records, report_rows=None):
@@ -405,9 +434,12 @@ def admin_dashboard(request):
         try:
             selected_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
         except ValueError:
-            selected_date = date.today()
+            selected_date = latest_attendance_date()
     else:
-        selected_date = date.today()
+        # No Date box entry: fall back to the newest day that HAS scans, not a
+        # hard "today", which is empty on every day after the event and used to
+        # blank the analytics cards + records table.
+        selected_date = latest_attendance_date()
 
     # ---------- students queryset (optimized) ----------
     students = (
@@ -436,9 +468,14 @@ def admin_dashboard(request):
     students = students.order_by("name")
 
     # ---------- attendance queryset (optimized) ----------
+    # student__major is required too: the table template prints
+    # record.student.major_name, and without it a day with 4k scans turns into
+    # 4k extra SELECTs while the page renders.
     scanned_records = (
         Attendance.objects
-        .select_related("student", "student__program", "student__college")
+        .select_related(
+            "student", "student__program", "student__college", "student__major"
+        )
     )
 
     if date_filter:
@@ -519,12 +556,9 @@ def admin_dashboard(request):
         entry = attendance_map.get(student.id, {"in": None, "out": None})
         time_in = entry["in"]
         time_out = entry["out"]
-        if time_in and time_out:
-            status = "COMPLETED"
-        elif time_in:
-            status = "IN"
-        else:
-            status = "ABSENT"
+        # Shared classifier: a check-out with no check-in is OUT, never ABSENT
+        # (see qrapp/attendance_status.py).
+        status, _ = attendance_status.classify(time_in, time_out)
 
         time_in_local = to_local(time_in)
         time_out_local = to_local(time_out)
@@ -1300,12 +1334,7 @@ def ajax_student_list(request):
             time_in = entry["in"] if entry else None
             time_out = entry["out"] if entry else None
 
-            if time_in and time_out:
-                status = "COMPLETED"
-            elif time_in:
-                status = "IN"
-            else:
-                status = "ABSENT"
+            status, _ = attendance_status.classify(time_in, time_out)
 
             student_data.append({
                 'id': student.id,
@@ -1368,15 +1397,20 @@ def ajax_dashboard_data(request):
             )
 
         # Date filtering logic
-        scanned_records = Attendance.objects.all()
-        selected_date = date.today()
+        # select_related: the JSON loop below reads student / program / college
+        # / major for every row, so a lazy FK load here would be 4 queries per
+        # scan (17k+ queries for a full event day).
+        scanned_records = Attendance.objects.select_related(
+            "student", "student__program", "student__college", "student__major"
+        )
+        selected_date = latest_attendance_date()
 
         if date_filter:
             try:
                 selected_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
-                scanned_records = scanned_records.filter(timestamp__date=selected_date)
             except ValueError:
-                scanned_records = scanned_records.filter(timestamp__date=date.today())
+                selected_date = latest_attendance_date()
+            scanned_records = scanned_records.filter(timestamp__date=selected_date)
 
         if start_date_filter and end_date_filter:
             try:
@@ -1448,23 +1482,28 @@ def ajax_dashboard_data(request):
                 'timestamp': record.timestamp.strftime("%I:%M:%S %p")
             })
 
-        # Build report-style rows for accurate analytics
+        # Build report-style rows for accurate analytics. ONE query for the
+        # window's scans grouped by student: the old per-student
+        # exists()+filter() loop issued ~2 queries per student (4,400+ queries
+        # for this roster) and made the dashboard take minutes to render.
+        attendance_map = {}
+        for row in (
+            scanned_records
+            .order_by("student_id", "timestamp")
+            .values("student_id", "status", "timestamp")
+        ):
+            entry = attendance_map.setdefault(row["student_id"], {"in": None, "out": None})
+            if row["status"] == "IN" and entry["in"] is None:
+                entry["in"] = row["timestamp"]
+            elif row["status"] == "OUT" and entry["out"] is None:
+                entry["out"] = row["timestamp"]
+
         report_rows = []
         for student in students:
-            student_attendance = scanned_records.filter(student=student).order_by("timestamp")
-            time_in = None
-            time_out = None
-            status = "ABSENT"
-            if student_attendance.exists():
-                for record in student_attendance:
-                    if record.status == "IN" and time_in is None:
-                        time_in = record.timestamp
-                    elif record.status == "OUT":
-                        time_out = record.timestamp
-                if time_in and time_out:
-                    status = "COMPLETED"
-                elif time_in:
-                    status = "IN"
+            entry = attendance_map.get(student.id)
+            time_in = entry["in"] if entry else None
+            time_out = entry["out"] if entry else None
+            status, _ = attendance_status.classify(time_in, time_out)
             report_rows.append({"status": status})
 
         stats = build_event_analytics(students, scanned_records, report_rows)
@@ -1475,8 +1514,10 @@ def ajax_dashboard_data(request):
             date_info = f"Showing attendance for {date_filter}"
         elif start_date_filter and end_date_filter:
             date_info = f"Showing attendance from {start_date_filter} to {end_date_filter}"
+        elif selected_date == date.today():
+            date_info = f"Showing today's attendance - {selected_date}"
         else:
-            date_info = f"Showing today's attendance - {date.today()}"
+            date_info = f"Showing the latest day with scans - {selected_date}"
 
         return JsonResponse({
             'success': True,
@@ -1543,15 +1584,15 @@ def ajax_reports_data(request):
 
         # Get attendance records with date/time filtering
         attendance_records = Attendance.objects.all()
-        selected_date = date.today()
+        selected_date = latest_attendance_date()
 
         # Single date filter
         if date_filter:
             try:
                 selected_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
-                attendance_records = attendance_records.filter(timestamp__date=selected_date)
             except ValueError:
-                attendance_records = attendance_records.filter(timestamp__date=date.today())
+                selected_date = latest_attendance_date()
+            attendance_records = attendance_records.filter(timestamp__date=selected_date)
 
         # Date range filter
         if start_date_filter and end_date_filter:
@@ -1618,26 +1659,13 @@ def ajax_reports_data(request):
             time_in = entry["in"] if entry else None
             time_out = entry["out"] if entry else None
 
-            status = "ABSENT"
-            attendance_date = None
-
-            if time_in and time_out:
-                status = "COMPLETED"
-                attendance_date = time_out.date()
-            elif time_in:
-                status = "IN"
-                attendance_date = time_in.date()
+            # A check-out with no check-in is OUT (see attendance_status.py),
+            # so a Time Out is never printed next to an ABSENT label.
+            status, attendance_date = attendance_status.classify(time_in, time_out)
 
             # Apply status filter if specified
-            if status_filter:
-                if status_filter == "present" and status == "ABSENT":
-                    continue
-                elif status_filter == "absent" and status != "ABSENT":
-                    continue
-                elif status_filter == "in" and status != "IN":
-                    continue
-                elif status_filter == "out" and status != "COMPLETED":
-                    continue
+            if not attendance_status.matches_filter(status, status_filter):
+                continue
 
             report_data.append({
                 'student_id': student.student_id,
@@ -1661,8 +1689,10 @@ def ajax_reports_data(request):
             date_info = f"Showing report for {date_filter}"
         elif start_date_filter and end_date_filter:
             date_info = f"Showing report from {start_date_filter} to {end_date_filter}"
+        elif selected_date == date.today():
+            date_info = f"Showing today's report - {selected_date}"
         else:
-            date_info = f"Showing today's report - {date.today()}"
+            date_info = f"Showing the latest day with scans - {selected_date}"
 
         return JsonResponse({
             'success': True,
@@ -2923,8 +2953,10 @@ def get_majors_json(request, program_code):
 def ajax_sidebar_logs(request):
     """
     Realtime feed for the sidebar "Live Logs" widget. Returns the most recent
-    attendance records (time-in / time-out) for today, newest first, so the
-    sidebar updates without a page refresh.
+    attendance records (time-in / time-out) for the newest day that has scans,
+    newest first, so the sidebar updates without a page refresh. On an event day
+    that is simply today; after the event it keeps the last day's feed visible
+    instead of an empty list.
 
     Optional GET params:
       limit   – max rows to return (default 15, capped at 50)
@@ -2942,7 +2974,7 @@ def ajax_sidebar_logs(request):
 
     records = (
         Attendance.objects.select_related("student", "student__program", "student__college")
-        .filter(timestamp__date=date.today())
+        .filter(timestamp__date=latest_attendance_date())
     )
     if since_id:
         records = records.filter(id__gt=since_id)
@@ -2993,11 +3025,12 @@ def scans_since(request):
     end_date_filter = request.GET.get("end_date")
 
     records = Attendance.objects.select_related(
-        "student", "student__program", "student__college"
+        "student", "student__program", "student__college", "student__major"
     )
 
-    # Date scoping
-    selected_date = date.today()
+    # Date scoping -- same "newest day with scans" default as the dashboard
+    # table so live polling stays aligned with the rows already on screen.
+    selected_date = latest_attendance_date()
     if date_filter:
         try:
             selected_date = datetime.strptime(date_filter, "%Y-%m-%d").date()

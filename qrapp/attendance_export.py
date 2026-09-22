@@ -9,7 +9,7 @@ attendance summary row matching the filters, straight from the database.
 
 Row shape mirrors the on-screen reports table (one row per student): first
 Time In and first Time Out inside the window, Date, and a COMPLETED / IN /
-ABSENT status.
+OUT / ABSENT status (see attendance_status.py).
 """
 
 import csv
@@ -19,6 +19,7 @@ from datetime import date, datetime
 from django.db.models import Q
 from django.http import HttpResponse
 
+from . import attendance_status
 from .models import Attendance, Event, Student
 
 ATTENDANCE_EXPORT_HEADERS = [
@@ -137,35 +138,25 @@ def build_attendance_report(params):
 
     # --- assemble rows (one per student, ABSENT included) ---------------
     rows = []
-    present = completed = 0
+    present = completed = out_only = 0
     for student in students:
         entry = attendance_map.get(student.pk) or {}
         time_in = entry.get("in")
         time_out = entry.get("out")
 
-        if time_in and time_out:
-            status = "COMPLETED"
-            attendance_date = time_out.date()
-        elif time_in:
-            status = "IN"
-            attendance_date = time_in.date()
-        else:
-            status = "ABSENT"
-            attendance_date = None
+        # Shared classifier: a check-out with no check-in is OUT, never
+        # ABSENT, so a row can never say "ABSENT" while carrying a Time Out.
+        status, attendance_date = attendance_status.classify(time_in, time_out)
 
-        if status_filter == "present" and status == "ABSENT":
-            continue
-        if status_filter == "absent" and status != "ABSENT":
-            continue
-        if status_filter == "in" and status != "IN":
-            continue
-        if status_filter == "out" and status != "COMPLETED":
+        if not attendance_status.matches_filter(status, status_filter):
             continue
 
-        if status in ("IN", "COMPLETED"):
+        if attendance_status.is_present(status):
             present += 1
-        if status == "COMPLETED":
+        if status == attendance_status.COMPLETED:
             completed += 1
+        if status == attendance_status.OUT:
+            out_only += 1
 
         rows.append([
             student.student_id,
@@ -185,6 +176,7 @@ def build_attendance_report(params):
         "present": present,
         "absent": len(rows) - present,
         "completed": completed,
+        "out_only": out_only,
     }
     meta = {
         "event": event_title,
@@ -235,6 +227,8 @@ def export_attendance_csv(rows, summary, meta, filename, include_headers=True, i
         writer.writerow(["Present", summary["present"]])
         writer.writerow(["Absent", summary["absent"]])
         writer.writerow(["Completed", summary["completed"]])
+        if summary.get("out_only"):
+            writer.writerow(["Out Only (No Time In)", summary["out_only"]])
         writer.writerow([])
 
     if include_headers:
@@ -281,6 +275,7 @@ def export_attendance_xlsx(rows, summary, filename, include_headers=True, includ
             ["Present", summary["present"]],
             ["Absent", summary["absent"]],
             ["Completed", summary["completed"]],
+            ["Out Only (No Time In)", summary.get("out_only", 0)],
         ):
             summary_sheet.append([label, value])
         summary_sheet.column_dimensions["A"].width = max(

@@ -881,6 +881,7 @@ function applyExportOptions() {
         dateTo: 'exportDateTo',
         timeFrom: 'exportTimeFrom',
         timeTo: 'exportTimeTo',
+        status: 'exportStatus',
         gender: 'exportGender',
         format: 'exportFormat',
     };
